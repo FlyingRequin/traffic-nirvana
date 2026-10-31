@@ -1,0 +1,10 @@
+{
+  "name": "Traffic Nirvana",
+  "short_name": "Traffic Nirvana",
+  "description": "Minimalist urban traffic simulation and road-network puzzle game",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F2EFE6",
+  "theme_color": "#F2EFE6"
+}

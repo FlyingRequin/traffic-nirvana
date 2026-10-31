@@ -1,0 +1,956 @@
+import { Car, Destination, FloatingText, GridCoord, House, WorldPoint } from './types';
+import { CONFIG } from './config';
+import { Pathfinding } from './pathfinding';
+import { DIR8_OFFSETS, RoadNetwork } from './roadNetwork';
+import { sound } from './sound';
+
+export class TrafficSimulation {
+  public cars: Car[] = [];
+  public floatingTexts: FloatingText[] = [];
+  private carCounter: number = 0;
+  private dispatchTimer: number = 0;
+  private simTime: number = 0;
+  private networkDirty: boolean = false;
+  private networkRerouteTimer: number = 0;
+
+  constructor(
+    private roadNetwork: RoadNetwork,
+    private getHouses: () => House[],
+    private getDestinations: () => Destination[],
+    private onScoreIncrement: (points: number) => void
+  ) {
+    this.roadNetwork.onNetworkChanged = () => {
+      this.networkDirty = true;
+    };
+  }
+
+  /**
+   * Returns the active driveway road tile adjacent to the house,
+   * prioritizing the house's facing driveway tile so cars always enter/exit via the rendered driveway apron.
+   */
+  public getHouseRoadNeighbors(house: House): GridCoord[] {
+    if (this.roadNetwork.hasRoad(house.driveway.x, house.driveway.y)) {
+      return [house.driveway];
+    }
+
+    const ortho: GridCoord[] = [
+      { x: house.x + 1, y: house.y },
+      { x: house.x - 1, y: house.y },
+      { x: house.x, y: house.y + 1 },
+      { x: house.x, y: house.y - 1 },
+    ];
+    const foundOrtho = ortho.filter((c) => this.roadNetwork.hasRoad(c.x, c.y));
+    if (foundOrtho.length > 0) return [foundOrtho[0]];
+
+    const diag: GridCoord[] = [
+      { x: house.x + 1, y: house.y - 1 },
+      { x: house.x + 1, y: house.y + 1 },
+      { x: house.x - 1, y: house.y + 1 },
+      { x: house.x - 1, y: house.y - 1 },
+    ];
+    const foundDiag = diag.filter((c) => this.roadNetwork.hasRoad(c.x, c.y));
+    return foundDiag.length > 0 ? [foundDiag[0]] : [];
+  }
+
+  /**
+   * Returns the destination's active parking-lot entrance road tile (matching the rendered asphalt mouth),
+   * prioritizing the bottom parking lot apron first so roads passing behind the building roof
+   * never suck cars through the building walls!
+   */
+  public getDestinationRoadNeighbors(dest: Destination): GridCoord[] {
+    if (this.roadNetwork.hasRoad(dest.entrance.x, dest.entrance.y)) {
+      return [dest.entrance];
+    }
+
+    // 1. Prioritize bottom parking-lot apron & side entrances touching the parking lot (y = dest.y + 1)
+    const lotNeighbors: GridCoord[] = [
+      { x: dest.x + 1, y: dest.y + dest.h },
+      { x: dest.x, y: dest.y + dest.h },
+      { x: dest.x - 1, y: dest.y + dest.h - 1 },
+      { x: dest.x + dest.w, y: dest.y + dest.h - 1 },
+      { x: dest.x - 1, y: dest.y + dest.h },
+      { x: dest.x + dest.w, y: dest.y + dest.h },
+    ];
+    const foundLot = lotNeighbors.filter((c) => this.roadNetwork.hasRoad(c.x, c.y));
+    if (foundLot.length > 0) return [foundLot[0]];
+
+    // 2. Fallback to upper side/top perimeter ONLY if no road touches the bottom parking lot
+    const upperNeighbors: GridCoord[] = [
+      { x: dest.x - 1, y: dest.y },
+      { x: dest.x + dest.w, y: dest.y },
+      { x: dest.x, y: dest.y - 1 },
+      { x: dest.x + 1, y: dest.y - 1 },
+    ];
+    const foundUpper = upperNeighbors.filter((c) => this.roadNetwork.hasRoad(c.x, c.y));
+    return foundUpper.length > 0 ? [foundUpper[0]] : [];
+  }
+
+  /**
+   * Builds a live per-tile congestion penalty map from active surface cars so pathfinding
+   * and dynamic rerouting naturally divert cars onto clear roads, Roundabouts, and Motorways.
+   */
+  public buildCongestionMap(excludeCarId?: string): Map<string, number> {
+    const map = new Map<string, number>();
+    for (const c of this.cars) {
+      if (
+        c.id === excludeCarId ||
+        c.onMotorway ||
+        (c.state !== 'to_dest' && c.state !== 'returning')
+      ) {
+        continue;
+      }
+      const gx = Math.floor(c.x);
+      const gy = Math.floor(c.y);
+      const key = `${gx},${gy}`;
+      const isSlowOrStopped = c.speed < CONFIG.GAMEPLAY.BASE_CAR_SPEED * 0.45 || c.isBraking;
+      const penalty = isSlowOrStopped ? 2.6 : 0.85;
+      map.set(key, (map.get(key) || 0) + penalty);
+
+      if (isSlowOrStopped) {
+        const ax = Math.floor(c.x + Math.cos(c.angle) * 0.65);
+        const ay = Math.floor(c.y + Math.sin(c.angle) * 0.65);
+        const aKey = `${ax},${ay}`;
+        map.set(aKey, (map.get(aKey) || 0) + 1.15);
+      }
+    }
+    return map;
+  }
+
+  private getParkingStallWorldPos(dest: Destination, stallIndex: number): WorldPoint {
+    const connectedRoads = this.getDestinationRoadNeighbors(dest);
+    const targetTile = connectedRoads.length > 0 ? connectedRoads[0] : dest.entrance;
+    const isNorthEntrance = targetTile.y < dest.y;
+
+    const col = stallIndex % 2;
+    const row = Math.floor(stallIndex / 2);
+    return {
+      x: dest.x + 0.65 + col * 0.7,
+      y: isNorthEntrance ? dest.y + 0.35 + row * 0.38 : dest.y + 1.25 + row * 0.38,
+    };
+  }
+
+  public isCarNearTile(tx: number, ty: number): boolean {
+    for (const c of this.cars) {
+      if (c.onMotorway || c.state === 'home') continue;
+      if (Math.abs(c.x - (tx + 0.5)) < 0.65 && Math.abs(c.y - (ty + 0.5)) < 0.65) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public getTrafficQueueAtIntersection(x: number, y: number): { ns: number; ew: number } {
+    let ns = 0;
+    let ew = 0;
+    for (const car of this.cars) {
+      if (car.onMotorway || car.state === 'at_dest' || car.state === 'home') continue;
+      const dx = car.x - (x + 0.5);
+      const dy = car.y - (y + 0.5);
+      const dist = Math.hypot(dx, dy);
+      if (dist <= 1.55) {
+        // Car is approaching or stopped near this intersection
+        if (Math.abs(dx) > Math.abs(dy)) {
+          ew++;
+        } else {
+          ns++;
+        }
+      }
+    }
+    return { ns, ew };
+  }
+
+  public update(dt: number) {
+    this.simTime += dt;
+    this.dispatchTimer += dt;
+    if (this.dispatchTimer >= 0.16) {
+      this.dispatchTimer = 0;
+      this.dispatchCars();
+    }
+
+    // Check and finalize any road demolition queues once vehicles have cleared the tile
+    this.roadNetwork.checkAndFinalizeDemolitions((x, y) => this.isCarNearTile(x, y));
+
+    if (this.networkDirty) {
+      this.networkRerouteTimer += dt;
+      if (this.networkRerouteTimer >= 0.08) {
+        this.networkDirty = false;
+        this.networkRerouteTimer = 0;
+        this.rerouteActiveCars(true);
+      }
+    }
+
+    this.updateSubways(dt);
+
+    for (let i = this.cars.length - 1; i >= 0; i--) {
+      const car = this.cars[i];
+      this.updateCar(car, dt);
+
+      if (car.state === 'home') {
+        const home = this.getHouses().find((h) => h.id === car.homeHouseId);
+        if (home) {
+          home.availableCars = Math.min(home.totalCars, home.availableCars + 1);
+        }
+        this.cars.splice(i, 1);
+      }
+    }
+
+    for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+      const ft = this.floatingTexts[i];
+      ft.life += dt;
+      ft.y -= dt * 22;
+      ft.scale = Math.min(1.15, 0.7 + (ft.life / ft.maxLife) * 0.6);
+      ft.opacity = Math.max(0, 1 - Math.pow(ft.life / ft.maxLife, 1.4));
+
+      if (ft.life >= ft.maxLife) {
+        this.floatingTexts.splice(i, 1);
+      }
+    }
+  }
+
+  private updateSubways(dt: number) {
+    const houses = this.getHouses();
+    const destinations = this.getDestinations();
+
+    for (const sub of this.roadNetwork.subways) {
+      const spanDist = Math.max(
+        3,
+        Math.hypot(sub.end.x - sub.start.x, sub.end.y - sub.start.y)
+      );
+      const step = (dt * 3.8) / spanDist;
+      sub.trainProgress += step * sub.direction;
+
+      let arrivedStation: GridCoord | null = null;
+      let originStation: GridCoord | null = null;
+
+      if (sub.trainProgress >= 1.0) {
+        sub.trainProgress = 1.0;
+        sub.direction = -1;
+        arrivedStation = sub.end;
+        originStation = sub.start;
+      } else if (sub.trainProgress <= 0.0) {
+        sub.trainProgress = 0.0;
+        sub.direction = 1;
+        arrivedStation = sub.start;
+        originStation = sub.end;
+      }
+
+      if (arrivedStation && originStation) {
+        const catchRadius = CONFIG.GAMEPLAY.SUBWAY_CATCHMENT_RADIUS;
+        // Check if arrivedStation serves any nearby Destination with active demand pins
+        for (const dest of destinations) {
+          const availableUnclaimedPins = dest.pins - dest.claimedPins;
+          if (availableUnclaimedPins <= 0) continue;
+
+          const distToDest = Math.hypot(
+            dest.x + dest.w * 0.5 - (arrivedStation.x + 0.5),
+            dest.y + dest.h * 0.5 - (arrivedStation.y + 0.5)
+          );
+          if (distToDest > catchRadius) continue;
+
+          // Sum up residential density (tier 1 = 1, tier 2 = 2, tier 3 = 3) of matching color near originStation
+          let connectedTierCapacity = 0;
+          for (const h of houses) {
+            if (h.color !== dest.color) continue;
+            const distToHouse = Math.hypot(
+              h.x + 0.5 - (originStation.x + 0.5),
+              h.y + 0.5 - (originStation.y + 0.5)
+            );
+            if (distToHouse <= catchRadius) {
+              connectedTierCapacity += h.tier || 1;
+            }
+          }
+
+          if (connectedTierCapacity > 0) {
+            const delivered = Math.min(
+              availableUnclaimedPins,
+              Math.min(4, connectedTierCapacity)
+            );
+            for (let k = 0; k < delivered; k++) {
+              if (dest.pins > 0) {
+                dest.pins--;
+                dest.pinAnimations.pop();
+              }
+            }
+            this.onScoreIncrement(delivered);
+            sound.playHarmonizedPinPickup(dest.color);
+
+            this.floatingTexts.push({
+              id: `ft_sub_${Date.now()}_${Math.random()}`,
+              x: (dest.x + dest.w / 2) * CONFIG.TILE_SIZE,
+              y: dest.y * CONFIG.TILE_SIZE - 8,
+              text: `+${delivered} 🚇`,
+              color: CONFIG.COLORS.SUBWAY_STATION_BG,
+              opacity: 1,
+              scale: 0.9,
+              life: 0,
+              maxLife: 1.3,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  private dispatchCars() {
+    const destinations = this.getDestinations();
+    const houses = this.getHouses();
+    const congestionMap = this.buildCongestionMap();
+
+    for (const dest of destinations) {
+      // If store is at warning threshold or overflowing, request an extra reserve car to preempt game-over
+      const warningThreshold = CONFIG.GAMEPLAY.OVERFLOW_WARNING_THRESHOLD;
+      const urgencyReserve = (dest.overflowTimer > 0 || dest.pins >= warningThreshold - 1) ? 1 : 0;
+      const neededCars = Math.max(0, dest.pins + urgencyReserve - dest.claimedPins);
+      if (neededCars <= 0) continue;
+
+      const destRoads = this.getDestinationRoadNeighbors(dest);
+      if (destRoads.length === 0) continue;
+
+      const matchingHouses = houses.filter(
+        (h) => h.color === dest.color && h.availableCars > 0
+      );
+
+      for (let n = 0; n < neededCars; n++) {
+        let bestHouse: House | null = null;
+        let bestGridPath: GridCoord[] | null = null;
+        let bestDispatchScore: number = Infinity;
+        let chosenDestRoad: GridCoord | null = null;
+        let chosenHouseRoad: GridCoord | null = null;
+
+        for (const house of matchingHouses) {
+          if (house.availableCars <= 0) continue;
+
+          const houseRoads = this.getHouseRoadNeighbors(house);
+          if (houseRoads.length === 0) continue;
+
+          for (const hr of houseRoads) {
+            for (const dr of destRoads) {
+              const roadPath = Pathfinding.findPath(
+                hr,
+                dr,
+                this.roadNetwork.roads,
+                this.roadNetwork.motorways,
+                congestionMap
+              );
+              if (roadPath) {
+                // 1. Raw road distance + motorway speedups + live car congestion
+                const rawCost = Pathfinding.getPathCost(
+                  roadPath,
+                  this.roadNetwork.roads,
+                  congestionMap
+                );
+
+                // 2. Active in-flight cars penalty:
+                // If a house already has a car on the road, dispatching another car has added friction.
+                // This prevents the closest house from monopolizing every trip while other houses sit idle!
+                const inFlightCars = house.totalCars - house.availableCars;
+                const activeCarPenalty = inFlightCars * 7.5;
+
+                // 3. Dispatch Recency Penalty:
+                // A house that dispatched just seconds ago yields to neighboring ready houses
+                const timeSinceDispatch = this.simTime - (house.lastDispatchTime ?? -999);
+                const recencyPenalty = Math.max(0, 8.0 - timeSinceDispatch * 1.6);
+
+                // 4. Idle House Priority / Fresh Fleet Bonus:
+                // Houses with full driveways that haven't dispatched in a while gain an eagerness bonus,
+                // naturally pulling farther suburbs into active circulation.
+                const isFullDriveway = house.availableCars === house.totalCars;
+                const idleBonus = isFullDriveway ? Math.min(5.5, 1.8 + timeSinceDispatch * 0.22) : 0;
+
+                const dispatchScore = rawCost + activeCarPenalty + recencyPenalty - idleBonus;
+
+                if (!bestGridPath || dispatchScore < bestDispatchScore) {
+                  bestGridPath = roadPath;
+                  bestDispatchScore = dispatchScore;
+                  bestHouse = house;
+                  chosenDestRoad = dr;
+                  chosenHouseRoad = hr;
+                }
+              }
+            }
+          }
+        }
+
+        if (bestHouse && bestGridPath && chosenDestRoad && chosenHouseRoad) {
+          bestHouse.availableCars--;
+          bestHouse.lastDispatchTime = this.simTime;
+          bestHouse.driveway = chosenHouseRoad;
+          dest.claimedPins++;
+
+          const numericId = ++this.carCounter;
+          const stallIdx = numericId % 4;
+
+          const originWorld: WorldPoint = {
+            x: bestHouse.x + 0.5 + (chosenHouseRoad.x - bestHouse.x) * 0.35,
+            y: bestHouse.y + 0.5 + (chosenHouseRoad.y - bestHouse.y) * 0.35,
+          };
+          const stallWorld = this.getParkingStallWorldPos(dest, stallIdx);
+
+          const smoothPath = Pathfinding.buildSmoothLanePath(
+            originWorld,
+            bestGridPath,
+            stallWorld,
+            this.roadNetwork.roads
+          );
+
+          let initialAngle = 0;
+          if (smoothPath.length > 1) {
+            initialAngle = Math.atan2(
+              smoothPath[1].y - smoothPath[0].y,
+              smoothPath[1].x - smoothPath[0].x
+            );
+          }
+
+          const car: Car = {
+            id: `car_${numericId}`,
+            numericId,
+            color: bestHouse.color,
+            homeHouseId: bestHouse.id,
+            destId: dest.id,
+            state: 'to_dest',
+            x: smoothPath[0].x,
+            y: smoothPath[0].y,
+            angle: initialAngle,
+            speed: CONFIG.GAMEPLAY.BASE_CAR_SPEED * 0.4,
+            targetSpeed: CONFIG.GAMEPLAY.BASE_CAR_SPEED,
+            isBraking: false,
+            smoothPath,
+            rawGridPath: bestGridPath,
+            currentPointIndex: 1,
+            onMotorway: false,
+            motorwayId: null,
+            pauseTimer: 0,
+            parkingStallIndex: stallIdx,
+            stuckTimer: 0,
+            rerouteCooldown: 0.6,
+          };
+
+          this.cars.push(car);
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  /**
+   * Dynamically recalculates routes for all active surface cars when the player builds new roads,
+   * adds a Roundabout, places a Motorway, or modifies intersections!
+   */
+  public rerouteActiveCars(forceOnNetworkEdit: boolean = false) {
+    const congestionMap = this.buildCongestionMap();
+    for (const car of this.cars) {
+      if (car.onMotorway || (car.state !== 'to_dest' && car.state !== 'returning')) {
+        continue;
+      }
+      this.tryRerouteCar(car, congestionMap, forceOnNetworkEdit);
+    }
+  }
+
+  private tryRerouteCar(
+    car: Car,
+    congestionMap: Map<string, number>,
+    forceOnNetworkEdit: boolean = false
+  ): boolean {
+    if (car.onMotorway || (car.state !== 'to_dest' && car.state !== 'returning')) {
+      return false;
+    }
+
+    // Never reroute a car while it is pulling out of a driveway/parking stall or pulling into a parking stall!
+    if (car.currentPointIndex <= 2 || car.currentPointIndex >= car.smoothPath.length - 3) {
+      return false;
+    }
+
+    let currTileX = Math.floor(car.x);
+    let currTileY = Math.floor(car.y);
+
+    // Never reroute while inside a House or Destination footprint
+    if (
+      this.roadNetwork.defaultOccupiedCheck &&
+      this.roadNetwork.defaultOccupiedCheck(currTileX, currTileY)
+    ) {
+      return false;
+    }
+
+    // If a Roundabout center island was placed right under the car, snap to nearest roundabout ring tile
+    if (!this.roadNetwork.hasRoad(currTileX, currTileY)) {
+      const isRoundaboutCenter = this.roadNetwork.roundabouts.some(
+        (rb) => rb.center.x === currTileX && rb.center.y === currTileY
+      );
+      if (!isRoundaboutCenter) return false;
+
+      let nearest: GridCoord | null = null;
+      let nearestDist = Infinity;
+      for (const { dx, dy } of DIR8_OFFSETS) {
+        const nx = currTileX + dx;
+        const ny = currTileY + dy;
+        if (this.roadNetwork.hasRoad(nx, ny)) {
+          const d = Math.hypot(nx + 0.5 - car.x, ny + 0.5 - car.y);
+          if (d < nearestDist) {
+            nearestDist = d;
+            nearest = { x: nx, y: ny };
+          }
+        }
+      }
+      if (!nearest) return false;
+      currTileX = nearest.x;
+      currTileY = nearest.y;
+    }
+
+    const startCoord: GridCoord = { x: currTileX, y: currTileY };
+    let targetRoads: GridCoord[] = [];
+    let goalWorld: WorldPoint | null = null;
+    let homeRef: House | undefined;
+
+    if (car.state === 'to_dest') {
+      const dest = this.getDestinations().find((d) => d.id === car.destId);
+      if (!dest) return false;
+      targetRoads = this.getDestinationRoadNeighbors(dest);
+      goalWorld = this.getParkingStallWorldPos(dest, car.parkingStallIndex);
+    } else {
+      homeRef = this.getHouses().find((h) => h.id === car.homeHouseId);
+      if (!homeRef) return false;
+      targetRoads = this.getHouseRoadNeighbors(homeRef);
+    }
+
+    if (targetRoads.length === 0) return false;
+
+    let bestPath: GridCoord[] | null = null;
+    let bestCost = Infinity;
+    let chosenTargetRoad: GridCoord | null = null;
+
+    for (const tr of targetRoads) {
+      const candidate = Pathfinding.findPath(
+        startCoord,
+        tr,
+        this.roadNetwork.roads,
+        this.roadNetwork.motorways,
+        congestionMap
+      );
+      if (candidate) {
+        const cost = Pathfinding.getPathCost(
+          candidate,
+          this.roadNetwork.roads,
+          congestionMap
+        );
+        if (!bestPath || cost < bestCost) {
+          bestPath = candidate;
+          bestCost = cost;
+          chosenTargetRoad = tr;
+        }
+      }
+    }
+
+    if (!bestPath || !chosenTargetRoad) return false;
+
+    // Check if the car's existing rawGridPath is still valid or if it crosses a modified/roundabout tile
+    let oldPathInvalidOrRoundaboutChanged = false;
+    let currIdxInOld = 0;
+    for (let i = 0; i < car.rawGridPath.length; i++) {
+      const pt = car.rawGridPath[i];
+      if (pt.x === currTileX && pt.y === currTileY) {
+        currIdxInOld = i;
+      }
+      const r = this.roadNetwork.getRoad(pt.x, pt.y);
+      if (!r || r.isRoundabout) {
+        oldPathInvalidOrRoundaboutChanged = true;
+      }
+    }
+
+    const remainingOldPath = car.rawGridPath.slice(currIdxInOld);
+    const oldCost =
+      remainingOldPath.length > 0
+        ? Pathfinding.getPathCost(remainingOldPath, this.roadNetwork.roads, congestionMap)
+        : Infinity;
+
+    const isMeaningfullyBetter = bestCost < oldCost - (forceOnNetworkEdit ? 0.35 : 0.75);
+    const pathDiffers =
+      bestPath.length !== remainingOldPath.length ||
+      bestPath.some(
+        (p, idx) =>
+          !remainingOldPath[idx] ||
+          p.x !== remainingOldPath[idx].x ||
+          p.y !== remainingOldPath[idx].y
+      );
+
+    if (!oldPathInvalidOrRoundaboutChanged && (!pathDiffers || !isMeaningfullyBetter)) {
+      return false;
+    }
+
+    if (car.state === 'returning' && homeRef) {
+      goalWorld = {
+        x: homeRef.x + 0.5 + (chosenTargetRoad.x - homeRef.x) * 0.35,
+        y: homeRef.y + 0.5 + (chosenTargetRoad.y - homeRef.y) * 0.35,
+      };
+    }
+    if (!goalWorld) return false;
+
+    const currentWorld: WorldPoint = { x: car.x, y: car.y };
+    const newSmooth = Pathfinding.buildSmoothLanePath(
+      currentWorld,
+      bestPath,
+      goalWorld,
+      this.roadNetwork.roads
+    );
+
+    // Advance currentPointIndex past points that are right on top of the car's current position
+    let nextIdx = 1;
+    while (
+      nextIdx < newSmooth.length - 1 &&
+      Math.hypot(newSmooth[nextIdx].x - car.x, newSmooth[nextIdx].y - car.y) < 0.26
+    ) {
+      nextIdx++;
+    }
+
+    car.rawGridPath = bestPath;
+    car.smoothPath = newSmooth;
+    car.currentPointIndex = nextIdx;
+    car.rerouteCooldown = 1.1;
+    return true;
+  }
+
+  private updateCar(car: Car, dt: number) {
+    if (car.rerouteCooldown && car.rerouteCooldown > 0) {
+      car.rerouteCooldown = Math.max(0, car.rerouteCooldown - dt);
+    }
+
+    if (car.state === 'at_dest') {
+      car.pauseTimer -= dt;
+      if (car.pauseTimer <= 0) {
+        const home = this.getHouses().find((h) => h.id === car.homeHouseId);
+        const dest = this.getDestinations().find((d) => d.id === car.destId);
+        if (dest) {
+          dest.activeParkingStalls[car.parkingStallIndex] = false;
+        }
+
+        if (home && dest) {
+          const homeRoads = this.getHouseRoadNeighbors(home);
+          const destRoads = this.getDestinationRoadNeighbors(dest);
+          const congestionMap = this.buildCongestionMap(car.id);
+
+          let returnGridPath: GridCoord[] | null = null;
+          let bestReturnCost = Infinity;
+          let chosenHomeRoad: GridCoord | null = null;
+
+          for (const dr of destRoads) {
+            for (const hr of homeRoads) {
+              const p = Pathfinding.findPath(
+                dr,
+                hr,
+                this.roadNetwork.roads,
+                this.roadNetwork.motorways,
+                congestionMap
+              );
+              if (p) {
+                const cost = Pathfinding.getPathCost(
+                  p,
+                  this.roadNetwork.roads,
+                  congestionMap
+                );
+                if (!returnGridPath || cost < bestReturnCost) {
+                  returnGridPath = p;
+                  bestReturnCost = cost;
+                  chosenHomeRoad = hr;
+                }
+              }
+            }
+          }
+
+          if (returnGridPath && chosenHomeRoad) {
+            const startWorld = { x: car.x, y: car.y };
+            const homeWorld = {
+              x: home.x + 0.5 + (chosenHomeRoad.x - home.x) * 0.35,
+              y: home.y + 0.5 + (chosenHomeRoad.y - home.y) * 0.35,
+            };
+            const smoothReturn = Pathfinding.buildSmoothLanePath(
+              startWorld,
+              returnGridPath,
+              homeWorld,
+              this.roadNetwork.roads
+            );
+
+            car.state = 'returning';
+            car.rawGridPath = returnGridPath;
+            car.smoothPath = smoothReturn;
+            car.currentPointIndex = 1;
+            car.onMotorway = false;
+            car.stuckTimer = 0;
+            car.rerouteCooldown = 0.6;
+          } else {
+            car.state = 'home';
+          }
+        } else {
+          car.state = 'home';
+        }
+      }
+      return;
+    }
+
+    if (car.state !== 'to_dest' && car.state !== 'returning') {
+      return;
+    }
+
+    // Check if finished smooth path
+    if (car.currentPointIndex >= car.smoothPath.length) {
+      if (car.state === 'to_dest') {
+        car.state = 'at_dest';
+        car.pauseTimer = CONFIG.GAMEPLAY.DESTINATION_VISIT_DURATION;
+        car.speed = 0;
+
+        const dest = this.getDestinations().find((d) => d.id === car.destId);
+        if (dest) {
+          dest.activeParkingStalls[car.parkingStallIndex] = true;
+          if (dest.pins > 0) {
+            dest.pins--;
+            dest.pinAnimations.pop();
+          }
+          dest.claimedPins = Math.max(0, dest.claimedPins - 1);
+          this.onScoreIncrement(1);
+          sound.playHarmonizedPinPickup(dest.color);
+
+          this.floatingTexts.push({
+            id: `ft_${Date.now()}_${Math.random()}`,
+            x: (dest.x + dest.w / 2) * CONFIG.TILE_SIZE,
+            y: dest.y * CONFIG.TILE_SIZE - 6,
+            text: '+1',
+            color: CONFIG.COLORS.BUILDINGS[dest.color].main,
+            opacity: 1,
+            scale: 0.8,
+            life: 0,
+            maxLife: 1.1,
+          });
+        }
+      } else if (car.state === 'returning') {
+        car.state = 'home';
+      }
+      return;
+    }
+
+    const prevPoint = car.smoothPath[car.currentPointIndex - 1] || { x: car.x, y: car.y };
+    const targetPoint = car.smoothPath[car.currentPointIndex];
+    const dx = targetPoint.x - car.x;
+    const dy = targetPoint.y - car.y;
+    const dist = Math.hypot(dx, dy);
+
+    // Detect if this segment is an elevated Motorway span
+    car.onMotorway = Boolean(targetPoint.isMotorway || prevPoint.isMotorway);
+
+    const baseSpeed = car.onMotorway
+      ? CONFIG.GAMEPLAY.BASE_CAR_SPEED * CONFIG.GAMEPLAY.MOTORWAY_SPEED_MULTIPLIER
+      : CONFIG.GAMEPLAY.BASE_CAR_SPEED;
+
+    let desiredSpeed = baseSpeed;
+    car.isBraking = false;
+
+    if (!car.onMotorway) {
+      const cosHeading = Math.cos(car.angle);
+      const sinHeading = Math.sin(car.angle);
+
+      // 1. Check Traffic Lights, Railroad Crossings & Uncontrolled Intersection Caution ahead
+      const aheadTileX = Math.floor(car.x + cosHeading * 0.45);
+      const aheadTileY = Math.floor(car.y + sinHeading * 0.45);
+      const currTileX = Math.floor(car.x);
+      const currTileY = Math.floor(car.y);
+      const currRoad = this.roadNetwork.getRoad(currTileX, currTileY);
+      const aheadRoad = this.roadNetwork.getRoad(aheadTileX, aheadTileY);
+      const onRoundabout = Boolean(
+        (currRoad && currRoad.isRoundabout) || (aheadRoad && aheadRoad.isRoundabout)
+      );
+
+      // Slow down slightly through uncontrolled 3-way/4-way intersections (Roundabouts stay fast!)
+      const currConnCount = currRoad
+        ? Object.values(currRoad.connections).filter(Boolean).length
+        : 0;
+      const aheadConnCount = aheadRoad
+        ? Object.values(aheadRoad.connections).filter(Boolean).length
+        : 0;
+      const isIntersection =
+        !onRoundabout &&
+        ((currRoad && currConnCount >= 3) || (aheadRoad && aheadConnCount >= 3));
+      if (isIntersection) {
+        desiredSpeed = Math.min(desiredSpeed, baseSpeed * 0.68);
+      }
+
+      // Also slow down when making sharp corner turns (unless circulating on a Roundabout)
+      if (dist > 0.001 && !onRoundabout) {
+        const targetAngle = Math.atan2(dy, dx);
+        let turnDiff = targetAngle - car.angle;
+        while (turnDiff < -Math.PI) turnDiff += Math.PI * 2;
+        while (turnDiff > Math.PI) turnDiff -= Math.PI * 2;
+        if (Math.abs(turnDiff) > 0.38) {
+          desiredSpeed = Math.min(desiredSpeed, baseSpeed * 0.62);
+        }
+      }
+
+      let stoppedBySignalOrTrain = false;
+      if (aheadTileX !== currTileX || aheadTileY !== currTileY) {
+        if (aheadRoad && aheadRoad.hasTrafficLight) {
+          const isMovingEW = Math.abs(cosHeading) >= Math.abs(sinHeading);
+          const isRed =
+            (isMovingEW && aheadRoad.lightGreenAxis === 'ns') ||
+            (!isMovingEW && aheadRoad.lightGreenAxis === 'ew');
+          if (isRed) {
+            desiredSpeed = 0;
+            car.isBraking = true;
+            stoppedBySignalOrTrain = true;
+          }
+        }
+        // 1b. Check Surface Commuter Train at Railroad Crossings
+        if (
+          aheadRoad &&
+          aheadRoad.isRailCrossing &&
+          this.roadNetwork.isTrainNearTile(aheadTileX, aheadTileY)
+        ) {
+          desiredSpeed = 0;
+          car.isBraking = true;
+          stoppedBySignalOrTrain = true;
+        }
+      }
+
+      const carStuckTime = car.stuckTimer || 0;
+
+      // 2. Direction-Aware Vehicle Spacing & Cross-Traffic Intersection Yielding
+      for (const other of this.cars) {
+        if (
+          other.id === car.id ||
+          other.onMotorway ||
+          other.state === 'at_dest' ||
+          other.state === 'home'
+        ) {
+          continue;
+        }
+
+        const odx = other.x - car.x;
+        const ody = other.y - car.y;
+        const otherDist = Math.hypot(odx, ody);
+        if (otherDist > CONFIG.GAMEPLAY.HEADWAY_DISTANCE || otherDist < 0.001) continue;
+
+        const headingAlignment = Math.cos(car.angle - other.angle);
+        const otherCos = Math.cos(other.angle);
+        const otherSin = Math.sin(other.angle);
+        const forwardProj = odx * cosHeading + ody * sinHeading;
+        const otherForwardProj = -odx * otherCos - ody * otherSin;
+        const lateralOffset = Math.abs(-odx * sinHeading + ody * cosHeading);
+
+        if (headingAlignment > 0.62) {
+          // SAME DIRECTION / MERGING LANE:
+          // Only yield if `other` is genuinely ahead of `car` (prevents side-by-side converging cars from both stopping for each other!)
+          const isOtherAhead =
+            forwardProj > otherForwardProj + 0.02 ||
+            (Math.abs(forwardProj - otherForwardProj) <= 0.02 &&
+              car.numericId > other.numericId);
+
+          if (
+            isOtherAhead &&
+            forwardProj > 0.03 &&
+            forwardProj < CONFIG.GAMEPLAY.HEADWAY_DISTANCE &&
+            lateralOffset < 0.21
+          ) {
+            desiredSpeed = Math.min(desiredSpeed, other.speed * 0.78);
+            car.isBraking = true;
+            const stopDist = carStuckTime > 1.3 ? 0.16 : 0.31;
+            if (forwardProj < stopDist) {
+              desiredSpeed = 0;
+            }
+          }
+        } else if (headingAlignment > -0.45 && !onRoundabout) {
+          // PERPENDICULAR / CROSSING / TURNING CONFLICT AT INTERSECTIONS:
+          if (
+            forwardProj > 0.02 &&
+            forwardProj < 0.46 &&
+            lateralOffset < 0.34 &&
+            otherDist < 0.48
+          ) {
+            const otherStuckTime = other.stuckTimer || 0;
+            const shouldYield =
+              carStuckTime <= otherStuckTime + 0.4 &&
+              (otherForwardProj < forwardProj - 0.04 || car.numericId > other.numericId);
+
+            if (shouldYield) {
+              desiredSpeed = 0;
+              car.isBraking = true;
+            }
+          }
+        }
+      }
+
+      // Post-loop deadlock release: if a car has been stuck in an intersection/merge knot for > 1.45s,
+      // let it creep forward so circular multi-car deadlocks always clear!
+      if (!stoppedBySignalOrTrain && carStuckTime > 1.45 && desiredSpeed === 0) {
+        desiredSpeed = baseSpeed * 0.44;
+      }
+
+      // Track stuck time & dynamically reroute if delayed in traffic (and not just waiting for a train/red light)
+      if (!stoppedBySignalOrTrain && car.speed < CONFIG.GAMEPLAY.BASE_CAR_SPEED * 0.38) {
+        car.stuckTimer = (car.stuckTimer || 0) + dt;
+        if (car.stuckTimer >= 0.85 && (car.rerouteCooldown || 0) <= 0) {
+          const rerouted = this.tryRerouteCar(car, this.buildCongestionMap(car.id), false);
+          if (rerouted) {
+            car.stuckTimer = 0;
+          } else {
+            car.rerouteCooldown = 0.9;
+          }
+        }
+      } else if (car.speed > CONFIG.GAMEPLAY.BASE_CAR_SPEED * 0.5) {
+        car.stuckTimer = Math.max(0, (car.stuckTimer || 0) - dt * 2.5);
+      }
+
+      // Record bottleneck congestion accumulation on the road tile
+      if (car.isBraking || car.speed < CONFIG.GAMEPLAY.BASE_CAR_SPEED * 0.45) {
+        const cTileX = Math.floor(car.x);
+        const cTileY = Math.floor(car.y);
+        const r = this.roadNetwork.getRoad(cTileX, cTileY);
+        if (r) {
+          r.congestionAccum = (r.congestionAccum || 0) + dt;
+        }
+      }
+    }
+
+    // Smooth acceleration and braking
+    if (car.speed < desiredSpeed) {
+      car.speed = Math.min(desiredSpeed, car.speed + CONFIG.GAMEPLAY.CAR_ACCELERATION * dt);
+    } else {
+      car.speed = Math.max(desiredSpeed, car.speed - CONFIG.GAMEPLAY.CAR_ACCELERATION * 2.0 * dt);
+    }
+
+    // Smooth angular rotation
+    if (dist > 0.001) {
+      const targetAngle = Math.atan2(dy, dx);
+      let diff = targetAngle - car.angle;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      car.angle += diff * Math.min(1.0, 18.0 * dt);
+    }
+
+    // Advance along smooth spline
+    let remainingStep = car.speed * dt;
+    while (remainingStep > 0 && car.currentPointIndex < car.smoothPath.length) {
+      const wp = car.smoothPath[car.currentPointIndex];
+      const segDx = wp.x - car.x;
+      const segDy = wp.y - car.y;
+      const segDist = Math.hypot(segDx, segDy);
+
+      if (remainingStep >= segDist) {
+        car.x = wp.x;
+        car.y = wp.y;
+        remainingStep -= segDist;
+        car.currentPointIndex++;
+      } else {
+        car.x += (segDx / segDist) * remainingStep;
+        car.y += (segDy / segDist) * remainingStep;
+        remainingStep = 0;
+      }
+    }
+  }
+
+  public isCarOnTile(x: number, y: number): boolean {
+    for (const car of this.cars) {
+      if (car.state === 'to_dest' || car.state === 'returning') {
+        if (Math.floor(car.x) === x && Math.floor(car.y) === y) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+}

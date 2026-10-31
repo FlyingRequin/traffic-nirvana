@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Traffic Nirvana" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Traffic Nirvana</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="game-container">
+      <!-- High-DPI Game Canvas -->
+      <canvas id="game-canvas"></canvas>
+
+      <!-- Top HUD Header -->
+      <header id="hud-top">
+        <div class="hud-left">
+          <div class="logo">
+            <span class="logo-mini">TRAFFIC</span>
+            <span class="logo-motorways">NIRVANA</span>
+          </div>
+          <div class="stat-pill score-pill">
+            <svg class="icon" viewBox="0 0 24 24" width="18" height="18">
+              <path fill="currentColor" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+            </svg>
+            <span id="score-display">0</span>
+            <span class="label">trips</span>
+          </div>
+        </div>
+
+        <div class="hud-center">
+          <div class="calendar-pill">
+            <div class="clock-dial">
+              <div class="clock-hand" id="clock-hand"></div>
+            </div>
+            <span id="day-display">MON</span>
+            <span class="week-text" id="week-display">WK 1</span>
+            <div class="day-progress-bar">
+              <div id="day-progress-fill"></div>
+            </div>
+          </div>
+          <div id="zen-pill" class="zen-pill hidden" title="Zen Relaxed Sandbox Mode">
+            <span>🧘 ZEN</span>
+          </div>
+        </div>
+
+        <div class="hud-right">
+          <div class="control-group">
+            <button id="btn-pause" class="icon-btn" title="Pause (Space)">
+              <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+            <button id="btn-speed-1" class="icon-btn active" title="Normal Speed (1)">1x</button>
+            <button id="btn-speed-2" class="icon-btn" title="Fast Speed (2)">2x</button>
+          </div>
+          <div class="control-group">
+            <button id="btn-menu" class="icon-btn" title="Menu (Esc)">
+              <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/></svg>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- Bottom Mini Motorways Inventory & Tool Dock -->
+      <nav id="toolbar">
+        <button id="tool-draw" class="dock-item active" title="Draw Road (D / Left-Click Drag)">
+          <div class="dock-circle road-circle">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path fill="currentColor" d="M11 3h2v4h-2V3zm0 7h2v4h-2v-4zm0 7h2v4h-2v-4zM5 3h2v18H5V3zm12 0h2v18h-2V3z"/>
+            </svg>
+          </div>
+          <div class="dock-meta">
+            <span class="dock-label">Roads</span>
+            <span class="dock-badge" id="roads-count">45</span>
+          </div>
+        </button>
+
+        <div class="dock-item passive" title="Bridges (Auto-placed when drawing roads across water)">
+          <div class="dock-circle bridge-circle">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path fill="currentColor" d="M2 15h20v2H2v-2zm2-4c3 0 5-3 8-3s5 3 8 3v3H4v-3zm1 7h3v3H5v-3zm11 0h3v3h-3v-3z"/>
+            </svg>
+          </div>
+          <div class="dock-meta">
+            <span class="dock-label">Bridges</span>
+            <span class="dock-badge" id="bridges-count">2</span>
+          </div>
+        </div>
+
+        <div class="dock-item passive" title="Mountain Tunnels (Auto-placed when boring roads through rocky mountains)">
+          <div class="dock-circle tunnel-circle">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path fill="currentColor" d="M12 4L2 20h5v-5a5 5 0 0 1 10 0v5h5L12 4z"/>
+            </svg>
+          </div>
+          <div class="dock-meta">
+            <span class="dock-label">Tunnels</span>
+            <span class="dock-badge" id="tunnels-count">2</span>
+          </div>
+        </div>
+
+        <button id="tool-roundabout" class="dock-item" title="Place 3x3 Roundabout (R)">
+          <div class="dock-circle roundabout-circle">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path fill="currentColor" d="M12 4a8 8 0 1 0 8 8 8 8 0 0 0-8-8zm0 12a4 4 0 1 1 4-4 4 4 0 0 1-4 4z"/>
+            </svg>
+          </div>
+          <div class="dock-meta">
+            <span class="dock-label">Roundabout</span>
+            <span class="dock-badge" id="roundabouts-count">1</span>
+          </div>
+        </button>
+
+        <button id="tool-traffic-light" class="dock-item" title="Place Traffic Light on Intersection (T)">
+          <div class="dock-circle light-circle">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path fill="currentColor" d="M15 3H9a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-3 15a2 2 0 1 1 2-2 2 2 0 0 1-2 2zm0-5a2 2 0 1 1 2-2 2 2 0 0 1-2 2zm0-5a2 2 0 1 1 2-2 2 2 0 0 1-2 2z"/>
+            </svg>
+          </div>
+          <div class="dock-meta">
+            <span class="dock-label">Lights</span>
+            <span class="dock-badge" id="lights-count">2</span>
+          </div>
+        </button>
+
+        <button id="tool-motorway" class="dock-item" title="Drag Express Motorway Flyover (W)">
+          <div class="dock-circle motorway-circle">
+            <span class="m-shield">M1</span>
+          </div>
+          <div class="dock-meta">
+            <span class="dock-label">Motorway</span>
+            <span class="dock-badge" id="motorways-count">1</span>
+          </div>
+        </button>
+
+        <button id="tool-subway" class="dock-item" title="Drag Underground Subway Metro Line (S)">
+          <div class="dock-circle subway-circle">
+            <span class="s-shield">S1</span>
+          </div>
+          <div class="dock-meta">
+            <span class="dock-label">Subway</span>
+            <span class="dock-badge" id="subways-count">1</span>
+          </div>
+        </button>
+
+        <button id="tool-blueprint" class="dock-item" title="Blueprint Planning Mode (B)">
+          <div class="dock-circle blueprint-circle">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path fill="currentColor" d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 10h2v7H7zm4-3h2v10h-2zm4 6h2v4h-2z"/>
+            </svg>
+          </div>
+          <div class="dock-meta">
+            <span class="dock-label">Blueprint</span>
+            <span class="dock-badge" id="blueprint-count">0</span>
+          </div>
+        </button>
+
+        <div class="dock-divider"></div>
+
+        <button id="tool-erase" class="dock-item" title="Erase Road / Reclaim Item (E or Right-Click)">
+          <div class="dock-circle erase-circle">
+            <svg viewBox="0 0 24 24" width="17" height="17">
+              <path fill="currentColor" d="M15.14 3c-.4 0-.8.15-1.11.46L2.46 15.03a1.56 1.56 0 0 0 0 2.22l4.29 4.29c.31.31.71.46 1.11.46h9.64v-2H9.86l-4.7-4.7 9.5-9.5 4.7 4.7-1.41 1.41 1.41 1.41 2.83-2.83a1.56 1.56 0 0 0 0-2.22l-4.29-4.29c-.31-.31-.71-.46-1.11-.46z"/>
+            </svg>
+          </div>
+          <div class="dock-meta">
+            <span class="dock-label">Erase</span>
+            <span class="dock-sub">R-Click</span>
+          </div>
+        </button>
+      </nav>
+
+      <!-- Floating Blueprint Action Bar (Feature #3) -->
+      <div id="blueprint-bar" class="blueprint-bar hidden">
+        <div class="blueprint-info">
+          <span class="blueprint-icon">📐</span>
+          <div class="blueprint-text-group">
+            <span class="blueprint-title">Blueprint Mode</span>
+            <span id="blueprint-cost" class="blueprint-cost">0 tiles drafted</span>
+          </div>
+        </div>
+        <div class="blueprint-actions">
+          <button id="btn-blueprint-commit" class="blueprint-btn commit" title="Commit Blueprint [Enter]">✓ Commit</button>
+          <button id="btn-blueprint-discard" class="blueprint-btn discard" title="Discard Blueprint [Esc]">✕ Discard</button>
+        </div>
+      </div>
+
+      <!-- Notification Toast -->
+      <div id="toast" class="hidden"></div>
+
+      <!-- Weekly Upgrade Dialog Modal -->
+      <div id="upgrade-modal" class="modal-backdrop hidden">
+        <div class="modal-card">
+          <div class="modal-header">
+            <span class="week-pill-badge">New Week</span>
+            <h2>A new week begins</h2>
+            <p>Select one of these weekly supply bundles for your growing city:</p>
+          </div>
+          <div class="upgrade-options" id="upgrade-options-container"></div>
+        </div>
+      </div>
+
+      <!-- Game Over Modal (Docked to side with unblurred map so you can clearly see why you failed!) -->
+      <div id="game-over-modal" class="modal-backdrop game-over-backdrop hidden">
+        <div class="modal-card game-over-card">
+          <div class="game-over-icon">⚠️</div>
+          <h2>Commute Gridlock</h2>
+          <p class="game-over-desc" id="game-over-desc">Too few cars were able to reach a destination in time.</p>
+          <div class="stats-summary">
+            <div class="summary-box">
+              <span class="summary-val" id="final-score">0</span>
+              <span class="summary-lbl">Total Trips</span>
+            </div>
+            <div class="summary-box">
+              <span class="summary-val" id="final-days">0</span>
+              <span class="summary-lbl">Days Survived</span>
+            </div>
+          </div>
+          <div class="game-over-extra-actions">
+            <button id="btn-toggle-heatmap" class="secondary-btn btn-heatmap-toggle">
+              <span>🔥 Bottleneck Heatmap</span>
+            </button>
+            <button id="btn-export-postcard" class="secondary-btn btn-postcard-export">
+              <span>📸 City Postcard</span>
+            </button>
+          </div>
+          <button id="btn-restart" class="action-btn">Play Again</button>
+          <button class="secondary-btn btn-main-menu">Main Menu</button>
+        </div>
+      </div>
+
+      <!-- Pause / In-Game Menu -->
+      <div id="pause-menu" class="modal-backdrop hidden">
+        <div class="modal-card menu-card">
+          <h2 class="menu-title">Paused</h2>
+          <p class="menu-sub" id="pause-map-name">River Valley</p>
+          <button id="btn-resume" class="action-btn">Resume</button>
+          <div class="option-list">
+            <button class="toggle-row" data-opt="night">
+              <span>🌙 Night mode</span><span class="switch"></span>
+            </button>
+            <button class="toggle-row on" data-opt="sound">
+              <span>🔊 Sound</span><span class="switch"></span>
+            </button>
+            <button class="menu-row" id="btn-pause-heatmap"><span>🔥 Congestion Heatmap</span><span class="kbd">H</span></button>
+            <button class="menu-row" id="btn-pause-postcard"><span>📸 Export City Postcard</span></button>
+            <button class="menu-row" id="btn-recenter"><span>🎯 Recenter camera</span><span class="kbd">0</span></button>
+            <button class="menu-row" id="btn-restart-city"><span>🔄 Restart this city</span></button>
+          </div>
+          <button class="secondary-btn btn-main-menu">Main Menu</button>
+        </div>
+      </div>
+
+      <!-- Postcard Share Modal -->
+      <div id="postcard-modal" class="modal-backdrop hidden">
+        <div class="modal-card postcard-modal-card">
+          <div class="postcard-modal-header">
+            <h3>City Postcard</h3>
+            <button id="btn-close-postcard" class="modal-close-icon">&times;</button>
+          </div>
+          <div class="postcard-preview-wrap">
+            <img id="postcard-preview-img" alt="Traffic Nirvana Postcard" />
+          </div>
+          <div class="postcard-modal-footer">
+            <button id="btn-copy-postcard" class="action-btn">📋 Copy Image</button>
+            <button id="btn-download-postcard" class="secondary-btn">💾 Save PNG</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Start / Setup Screen -->
+      <div id="start-screen">
+        <div class="start-panel">
+          <div class="start-logo">
+            <span class="logo-mini">TRAFFIC</span>
+            <span class="logo-motorways">NIRVANA</span>
+          </div>
+          <p class="start-tagline">Draw roads. Keep the city moving. Don't let a store overflow.</p>
+
+          <h3 class="start-section">Choose a city</h3>
+          <div class="map-cards">
+            <button class="map-card selected" data-map="river_valley">
+              <span class="map-emoji">🏞️</span>
+              <span class="map-name">River Valley</span>
+              <span class="map-desc">Winding river, bridges, a commuter railway</span>
+              <span class="map-best" data-best="river_valley">Best: —</span>
+            </button>
+            <button class="map-card" data-map="twin_islands">
+              <span class="map-emoji">🏝️</span>
+              <span class="map-name">Twin Islands</span>
+              <span class="map-desc">Two shores split by water — plan your crossings</span>
+              <span class="map-best" data-best="twin_islands">Best: —</span>
+            </button>
+            <button class="map-card" data-map="alpine_pass">
+              <span class="map-emoji">🏔️</span>
+              <span class="map-name">Alpine Pass</span>
+              <span class="map-desc">Mountains, hills and tunnels</span>
+              <span class="map-best" data-best="alpine_pass">Best: —</span>
+            </button>
+          </div>
+
+          <h3 class="start-section">Game Mode</h3>
+          <div class="mode-cards">
+            <button class="mode-card selected" data-mode="standard">
+              <span class="mode-emoji">⏱️</span>
+              <div class="mode-card-meta">
+                <span class="mode-name">Standard</span>
+                <span class="mode-desc">Stores overflow with waiting pins. Keep roads clear to survive!</span>
+              </div>
+            </button>
+            <button class="mode-card" data-mode="zen">
+              <span class="mode-emoji">🧘</span>
+              <div class="mode-card-meta">
+                <span class="mode-name">Zen Sandbox</span>
+                <span class="mode-desc">No overflow timers, no game overs, extra road tiles for relaxed building.</span>
+              </div>
+            </button>
+          </div>
+
+          <h3 class="start-section">Settings</h3>
+          <div class="option-list option-grid">
+            <button class="toggle-row" data-opt="night">
+              <span>🌙 Night mode</span><span class="switch"></span>
+            </button>
+            <button class="toggle-row on" data-opt="sound">
+              <span>🔊 Sound</span><span class="switch"></span>
+            </button>
+          </div>
+
+          <button id="btn-start" class="action-btn start-btn">Start Building</button>
+
+          <details class="how-to">
+            <summary>How to play</summary>
+            <ul>
+              <li><b>Drag</b> to draw roads from houses to stores of the same color.</li>
+              <li>Stores collect <b>pins</b>. Too many and a timer starts — let it run out and it's game over.</li>
+              <li>Each week you pick an upgrade: roundabouts, traffic lights, motorways, subways…</li>
+              <li><b>Pinch / scroll</b> to zoom, <b>two fingers / Alt-drag</b> to pan, <b>right-click</b> to erase. <b>Space</b> pauses, <b>Esc</b> opens the menu.</li>
+            </ul>
+          </details>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

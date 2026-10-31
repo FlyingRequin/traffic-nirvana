@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.DS_Store
+.firebase/
+ios/App/Pods/
+ios/App/App/public/
+*.log

@@ -1,0 +1,11 @@
+{
+  "appId": "com.trafficnirvana.app",
+  "appName": "Traffic Nirvana",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#F2EFE6",
+    "preferredContentMode": "mobile"
+  }
+}
