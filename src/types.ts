@@ -4,6 +4,8 @@ export type MapId = 'river_valley' | 'twin_islands' | 'alpine_pass';
 
 export type GameMode = 'standard' | 'zen';
 
+export type DifficultyMode = 'relaxed' | 'normal' | 'rush_hour';
+
 export interface StationRushQueueItem {
   destId: string;
   pinsLeft: number;

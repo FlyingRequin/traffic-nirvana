@@ -4,7 +4,7 @@ import { LevelProgression } from './levelProgression';
 import { TrafficSimulation } from './traffic';
 import { GameRenderer } from './renderer';
 import { sound } from './sound';
-import { GameMode, GridCoord, MapId, UpgradeOption } from './types';
+import { DifficultyMode, GameMode, GridCoord, MapId, UpgradeOption } from './types';
 
 type ToolType = 'draw' | 'erase' | 'motorway' | 'roundabout' | 'traffic_light' | 'subway' | 'blueprint';
 
@@ -59,7 +59,9 @@ class MiniMotorwaysGame {
   private btnBlueprintCommit: HTMLElement;
   private btnBlueprintDiscard: HTMLElement;
   private zenPill: HTMLElement;
+  private diffPill: HTMLElement;
   private selectedGameMode: GameMode = 'standard';
+  private selectedDifficulty: DifficultyMode = 'normal';
   private toastEl: HTMLElement;
   private upgradeModal: HTMLElement;
   private upgradeOptionsContainer: HTMLElement;
@@ -109,6 +111,7 @@ class MiniMotorwaysGame {
     this.btnBlueprintCommit = document.getElementById('btn-blueprint-commit')!;
     this.btnBlueprintDiscard = document.getElementById('btn-blueprint-discard')!;
     this.zenPill = document.getElementById('zen-pill')!;
+    this.diffPill = document.getElementById('diff-pill')!;
     this.toastEl = document.getElementById('toast')!;
     this.upgradeModal = document.getElementById('upgrade-modal')!;
     this.upgradeOptionsContainer = document.getElementById('upgrade-options-container')!;
@@ -145,7 +148,9 @@ class MiniMotorwaysGame {
     );
     this.roadNetwork.defaultOccupiedCheck = (x, y) => this.level.isOccupied(x, y);
     this.level.gameMode = this.selectedGameMode;
+    this.level.difficultyMode = this.selectedDifficulty;
     this.zenPill.classList.toggle('hidden', this.selectedGameMode !== 'zen');
+    this.diffPill.classList.toggle('hidden', this.selectedDifficulty !== 'rush_hour');
     if (this.selectedGameMode === 'zen') {
       this.roadNetwork.roadsRemaining += 20;
     }
@@ -231,6 +236,17 @@ class MiniMotorwaysGame {
         card.classList.add('selected');
         const mode = card.dataset.mode as GameMode;
         if (mode) this.selectedGameMode = mode;
+      });
+    });
+
+    // Setup screen: difficulty picker (Option #2)
+    document.querySelectorAll<HTMLElement>('.diff-card').forEach((card) => {
+      card.addEventListener('click', () => {
+        sound.unlockAudio();
+        document.querySelectorAll('.diff-card').forEach((c) => c.classList.remove('selected'));
+        card.classList.add('selected');
+        const diff = card.dataset.diff as DifficultyMode;
+        if (diff) this.selectedDifficulty = diff;
       });
     });
 
@@ -444,7 +460,9 @@ class MiniMotorwaysGame {
     this.startScreen.classList.add('hidden');
     document.body.classList.remove('in-menu');
     this.level.gameMode = this.selectedGameMode;
+    this.level.difficultyMode = this.selectedDifficulty;
     this.zenPill.classList.toggle('hidden', this.selectedGameMode !== 'zen');
+    this.diffPill.classList.toggle('hidden', this.selectedDifficulty !== 'rush_hour');
     if (this.selectedGameMode === 'zen') {
       this.roadNetwork.roadsRemaining += 20;
     }
@@ -1063,7 +1081,9 @@ class MiniMotorwaysGame {
     );
     this.roadNetwork.defaultOccupiedCheck = (x, y) => this.level.isOccupied(x, y);
     this.level.gameMode = this.selectedGameMode;
+    this.level.difficultyMode = this.selectedDifficulty;
     this.zenPill.classList.toggle('hidden', this.selectedGameMode !== 'zen');
+    this.diffPill.classList.toggle('hidden', this.selectedDifficulty !== 'rush_hour');
     if (this.selectedGameMode === 'zen') {
       this.roadNetwork.roadsRemaining += 20;
     }
