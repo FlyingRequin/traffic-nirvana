@@ -1,39 +1,74 @@
-# Mini Motorways - Enhanced 1-Level Clone
+# Traffic Nirvana (v1.0.0)
 
-An elevated, highly responsive web clone of Dinosaur Polo Club's **Mini Motorways**, crafted with high-fidelity vector aesthetics, dual-lane traffic physics, express highway flyovers, and generative audio.
+An elevated, highly responsive web & mobile recreation of **Mini Motorways**, crafted with 3D diorama architecture, dual-lane traffic physics, express highway flyovers, surface commuter trains, reactive Disasterpeace-style audio, and blueprint planning.
 
-## What's New & Upgraded
+🎮 **Play Live**: [https://traffic-nirvana.web.app](https://traffic-nirvana.web.app)
 
-- **The Titular Motorways (Highways)**:
-  - Drag an elevated highway flyover across the map to connect distant suburbs directly.
-  - Features graceful elevated arches, dynamic ambient drop shadows, and numbered highway shield markers (🛣️ 1, 2...).
-  - Commuter vehicles traveling on Motorways bypass city gridlock at **2.3x speed**!
-- **Dual-Lane Right-Hand Traffic Physics**:
-  - Roads are bidirectional: inbound and outbound traffic drives on the right side of the road with realistic lane separation instead of clipping head-on.
-  - Realistic headway queuing, deceleration, and **glowing red taillights** when braking.
-- **Organic Spline World & Animated Nature**:
-  - Smooth river geometry with curved banks, shoreline gradients, and animated water ripples.
-  - Delicate drafting grid and swaying meadow trees.
-- **Melodic Road Building & Disasterpeace-Style Music**:
-  - **Melodic drag feedback**: laying down consecutive road segments plays an ascending pentatonic scale for ultra-satisfying tactile feedback.
-  - **Generative ambient music**: procedurally swells relaxing warm synth chords in the background.
-  - Crystal glass pin pickups, warning heartbeats, and Sunday shipment fanfares.
-- **Floating Points & Camera Shake**:
-  - Floating `+1` score particles bounce up from destinations upon passenger drop-off.
-  - Visceral screen rumble when a destination enters critical overflow danger.
+---
 
-## Controls
+## 🌟 Key Features
+
+- **3D Diorama Architecture**: Residential houses upgrade dynamically through 3 tiers (Suburban House $\to$ Mid-Rise Townhouse $\to$ High-Rise Skyscraper) with matching parking bays and solar panels. Commercial stores feature custom awnings, HVAC mechanical units, and upgradeable Circular Hub designs.
+- **Surface Commuter Train & Railroad**: Central Commuter Train Station trackside platform along procedural corridors, featuring multi-car passenger trains and 2-tone melodic acoustic crossing bells.
+- **Smart Traffic Dispatch & Suburb Rotation**:
+  - *Far-Baseline*: When calm, distant suburbs cruise along highways and bridges for baseline trips.
+  - *Close-Reserve*: When urgent, nearby houses act as emergency rapid-response teams.
+  - *Rotation Fairness*: Lifetime dispatch quotas ensure all suburbs take turns circulating.
+- **Traffic Density & Game Modes**:
+  - *Modes*: Standard Survival (⏱️) vs. Zen Sandbox (🧘).
+  - *Density*: Chill (☕), Balanced (🚗), Rush Hour (⚡ population-scaled demand).
+- **Blueprint Ghost Planning Mode (<kbd>B</kbd>)**: Draft complex interchanges and bypasses freely with architectural glow lines while paused, then Commit (<kbd>Enter</kbd>) or Discard (<kbd>Esc</kbd>).
+- **Ghost Demolition Queue**: Safely cordons roads slated for deletion with yellow hazard stripes until traffic vacates the tile.
+- **Smart Sensor Traffic Lights & Roundabouts**: Responsive micro-sensor traffic lights that detect waiting queues.
+- **Bottleneck Congestion Heatmap (<kbd>H</kbd>) & City Postcard Photo Export (<kbd>P</kbd>)**: Real-time delay heatmaps and high-res exportable postcards.
+- **Harmonized Reactive Audio Engine**: Car arrivals trigger notes harmonized to the active ambient chord swell based on building color.
+- **Cross-Platform**: Responsive Web + Native iOS via Capacitor.
+
+---
+
+## ⌨️ Controls & Shortcuts
 
 | Action | Control |
 | :--- | :--- |
 | **Draw Road** | Left-Click + Drag or <kbd>D</kbd> |
-| **Motorway Flyover** | <kbd>W</kbd> (or select Motorway tool, then drag across city) |
-| **Erase Road / Motorway** | Right-Click + Drag or <kbd>E</kbd> |
+| **Blueprint Mode** | <kbd>B</kbd> |
+| **Commit Blueprint** | <kbd>Enter</kbd> |
+| **Discard Blueprint** | <kbd>Esc</kbd> |
+| **Motorway Flyover** | <kbd>W</kbd> |
+| **Subway Metro Line** | <kbd>S</kbd> |
+| **Roundabout** | <kbd>R</kbd> |
+| **Traffic Light** | <kbd>T</kbd> |
+| **Erase Road / Reclaim** | Right-Click + Drag or <kbd>E</kbd> |
+| **Toggle Heatmap** | <kbd>H</kbd> |
+| **City Postcard** | <kbd>P</kbd> |
 | **Pause / Resume** | <kbd>Spacebar</kbd> |
-| **Speed (1x / 2x)** | <kbd>1</kbd> / <kbd>2</kbd> |
+| **Game Speed (1x / 2x)** | <kbd>1</kbd> / <kbd>2</kbd> |
+| **Toggle Night Theme** | <kbd>N</kbd> |
 | **Toggle Audio** | <kbd>M</kbd> |
+| **Zoom / Pan** | Scroll wheel / Pinch; Middle-click / Alt-drag to pan |
 
-## Running Locally
+---
 
-The local development server is running at:
-**[http://localhost:3000](http://localhost:3000)**
+## 🛠️ Development & Building
+
+```bash
+# Install dependencies
+npm install
+
+# Start local development server
+npm run dev
+
+# Production build
+npm run build
+
+# Sync to iOS project
+npm run ios:sync
+
+# Deploy to Firebase Hosting
+npm run deploy
+```
+
+---
+
+## 📄 License & Release
+See [RELEASE_NOTES.md](./RELEASE_NOTES.md) for full version history and changelog.
