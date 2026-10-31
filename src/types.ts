@@ -87,6 +87,7 @@ export interface House {
   availableCars: number;
   spawnAnimation: number;
   lastDispatchTime?: number; // Simulation timestamp of last car dispatch
+  totalDispatches?: number; // Total cars dispatched over lifetime
 }
 
 export interface Destination {

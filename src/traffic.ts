@@ -297,9 +297,10 @@ export class TrafficSimulation {
     const congestionMap = this.buildCongestionMap();
 
     for (const dest of destinations) {
-      // If store is at warning threshold or overflowing, request an extra reserve car to preempt game-over
+      // State Detection: Is the store in an emergency? (Feature: Far-Baseline vs Close-Reserve)
       const warningThreshold = CONFIG.GAMEPLAY.OVERFLOW_WARNING_THRESHOLD;
-      const urgencyReserve = (dest.overflowTimer > 0 || dest.pins >= warningThreshold - 1) ? 1 : 0;
+      const isUrgent = dest.overflowTimer > 0 || dest.pins >= warningThreshold - 1;
+      const urgencyReserve = isUrgent ? 1 : 0;
       const neededCars = Math.max(0, dest.pins + urgencyReserve - dest.claimedPins);
       if (neededCars <= 0) continue;
 
@@ -333,7 +334,7 @@ export class TrafficSimulation {
                 congestionMap
               );
               if (roadPath) {
-                // 1. Raw road distance + motorway speedups + live car congestion
+                // 1. Raw road travel cost (distance + motorway speedups + congestion delays)
                 const rawCost = Pathfinding.getPathCost(
                   roadPath,
                   this.roadNetwork.roads,
@@ -341,23 +342,40 @@ export class TrafficSimulation {
                 );
 
                 // 2. Active in-flight cars penalty:
-                // If a house already has a car on the road, dispatching another car has added friction.
-                // This prevents the closest house from monopolizing every trip while other houses sit idle!
+                // Prevents a single house from sending all its cars in a convoy while others sit idle
                 const inFlightCars = house.totalCars - house.availableCars;
-                const activeCarPenalty = inFlightCars * 7.5;
+                const activeCarPenalty = inFlightCars * 10.0;
 
                 // 3. Dispatch Recency Penalty:
-                // A house that dispatched just seconds ago yields to neighboring ready houses
+                // A house that dispatched recently yields to neighboring ready houses (Option #4 Rotation)
                 const timeSinceDispatch = this.simTime - (house.lastDispatchTime ?? -999);
-                const recencyPenalty = Math.max(0, 8.0 - timeSinceDispatch * 1.6);
+                const recencyPenalty = Math.max(0, 16.0 - timeSinceDispatch * 1.5);
 
-                // 4. Idle House Priority / Fresh Fleet Bonus:
-                // Houses with full driveways that haven't dispatched in a while gain an eagerness bonus,
-                // naturally pulling farther suburbs into active circulation.
-                const isFullDriveway = house.availableCars === house.totalCars;
-                const idleBonus = isFullDriveway ? Math.min(5.5, 1.8 + timeSinceDispatch * 0.22) : 0;
+                // 4. Lifetime Suburb Quota Balancing:
+                // Houses that have dispatched fewer lifetime trips get higher priority, ensuring even circulation
+                const dispatchCount = house.totalDispatches || 0;
+                const quotaPenalty = dispatchCount * 3.0;
 
-                const dispatchScore = rawCost + activeCarPenalty + recencyPenalty - idleBonus;
+                let dispatchScore: number;
+
+                if (isUrgent) {
+                  // --- EMERGENCY CLOSE-RESERVE MODE ---
+                  // Store is in danger of overflowing! Closest available houses act as rapid-response units.
+                  // Raw travel distance is heavily prioritized to minimize arrival time.
+                  const distanceCost = rawCost * 1.8;
+                  dispatchScore = distanceCost + activeCarPenalty + recencyPenalty * 0.5;
+                } else {
+                  // --- CALM BASELINE COMMUTE MODE (Option #1 + Option #4) ---
+                  // Store is relaxed (0-2 pins). No rush.
+                  // We want distant suburbs to embark on baseline daily shopping trips across bridges and highways!
+                  // Softened distance cost + idle waiting bonus + far voyage incentive
+                  const distanceCost = Math.sqrt(rawCost) * 2.2;
+                  const isFullDriveway = house.availableCars === house.totalCars;
+                  const idleBonus = isFullDriveway ? Math.min(24.0, 4.0 + timeSinceDispatch * 0.8) : 0;
+                  const voyageIncentive = Math.min(10.0, rawCost * 0.35);
+
+                  dispatchScore = distanceCost + activeCarPenalty + recencyPenalty + quotaPenalty - idleBonus - voyageIncentive;
+                }
 
                 if (!bestGridPath || dispatchScore < bestDispatchScore) {
                   bestGridPath = roadPath;
@@ -374,6 +392,7 @@ export class TrafficSimulation {
         if (bestHouse && bestGridPath && chosenDestRoad && chosenHouseRoad) {
           bestHouse.availableCars--;
           bestHouse.lastDispatchTime = this.simTime;
+          bestHouse.totalDispatches = (bestHouse.totalDispatches || 0) + 1;
           bestHouse.driveway = chosenHouseRoad;
           dest.claimedPins++;
 
