@@ -1,4 +1,4 @@
-import { BuildingColor, Destination, GameMode, House, StationRushQueueItem, UpgradeOption } from './types';
+import { BuildingColor, Destination, DifficultyMode, GameMode, House, StationRushQueueItem, UpgradeOption } from './types';
 import { CONFIG } from './config';
 import { sound } from './sound';
 
@@ -11,6 +11,7 @@ export interface MapBounds {
 
 export class LevelProgression {
   public gameMode: GameMode = 'standard';
+  public difficultyMode: DifficultyMode = 'normal';
   public currentDay: number = 1;
   public dayTimer: number = 0;
   public isPaused: boolean = false;
@@ -837,7 +838,21 @@ export class LevelProgression {
 
     for (const dest of this.destinations) {
       dest.spawnAccumulator += dt;
-      if (dest.spawnAccumulator >= dest.spawnInterval) {
+
+      // Dynamic Population Demand Scaling (Option #2)
+      let effectiveInterval = dest.spawnInterval;
+      if (this.difficultyMode === 'rush_hour') {
+        const pop = this.houses
+          .filter((h) => h.color === dest.color)
+          .reduce((sum, h) => sum + h.totalCars, 0);
+        // Scales demand dynamically with residential population, keeping 60-80% of cars in active motion!
+        const popFactor = Math.max(1.0, 1.0 + (pop - 4) * 0.08);
+        effectiveInterval = Math.max(1.15, dest.spawnInterval / popFactor);
+      } else if (this.difficultyMode === 'relaxed') {
+        effectiveInterval = dest.spawnInterval * 1.35;
+      }
+
+      if (dest.spawnAccumulator >= effectiveInterval) {
         dest.spawnAccumulator = 0;
         if (dest.pins < dest.maxPins) {
           dest.pins++;
