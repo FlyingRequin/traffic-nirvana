@@ -44,6 +44,24 @@ html, body {
   transition: background-color 0.35s ease;
 }
 
+/* Universal and specific element visibility helpers */
+.hidden:not(.modal-backdrop):not(#toast):not(#start-screen):not(.blueprint-bar) {
+  display: none !important;
+}
+
+#calendar-pill.hidden,
+.calendar-pill.hidden,
+#zen-pill.hidden,
+.zen-pill.hidden,
+#symphony-pill.hidden,
+.symphony-pill.hidden,
+#diff-pill.hidden,
+.diff-pill.hidden,
+#timetable-ticker.hidden,
+.timetable-ticker.hidden {
+  display: none !important;
+}
+
 #game-container {
   position: relative;
   width: 100vw;
@@ -134,6 +152,8 @@ html, body {
 .hud-center {
   display: flex;
   align-items: center;
+  gap: 10px;
+  justify-content: center;
 }
 
 .calendar-pill {
@@ -407,19 +427,22 @@ html, body {
 /* TOAST */
 #toast {
   position: absolute;
-  top: 72px;
+  top: 104px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(34, 40, 49, 0.94);
+  background: rgba(15, 23, 42, 0.94);
   color: #fff;
-  padding: 8px 20px;
+  padding: 8px 22px;
   border-radius: 9999px;
   font-size: 12.5px;
   font-weight: 700;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   pointer-events: none;
   transition: opacity 0.25s, transform 0.25s;
   z-index: 50;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 #toast.hidden {
@@ -1153,6 +1176,22 @@ body.night-mode .symphony-pill {
   font-size: 15px;
 }
 
+.symphony-day {
+  font-weight: 800;
+  font-size: 10.5px;
+  letter-spacing: 0.6px;
+  color: #7c3aed;
+  padding: 1.5px 6px;
+  background: rgba(142, 84, 233, 0.16);
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+body.night-mode .symphony-day {
+  color: #c4b5fd;
+  background: rgba(167, 139, 250, 0.22);
+}
+
 .symphony-clock {
   font-family: monospace;
   font-weight: 800;
@@ -1216,17 +1255,17 @@ body.night-mode .symphony-flow-track {
 /* Timetable Heads-Up Ribbon */
 .timetable-ticker {
   position: absolute;
-  top: 68px;
+  top: 58px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 6px 16px;
-  background: rgba(15, 23, 42, 0.88);
-  border: 1px solid rgba(168, 121, 245, 0.6);
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid rgba(168, 121, 245, 0.65);
   border-radius: 999px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25), 0 0 16px rgba(168, 121, 245, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 16px rgba(168, 121, 245, 0.35);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: #f1f5f9;
