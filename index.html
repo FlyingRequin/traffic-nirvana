@@ -49,6 +49,18 @@
           <div id="zen-pill" class="zen-pill hidden" title="Zen Relaxed Sandbox Mode">
             <span>🧘 ZEN</span>
           </div>
+          <div id="symphony-pill" class="symphony-pill hidden" title="City Symphony: Daily Rhythms & Flow Harmony">
+            <span class="symphony-icon">🎶</span>
+            <span id="symphony-clock" class="symphony-clock">08:30 AM</span>
+            <span id="symphony-phase" class="symphony-phase">MORNING COMMUTE</span>
+            <div class="symphony-flow-wrap">
+              <span id="symphony-flow-label">100% Flow</span>
+              <div class="symphony-flow-track">
+                <div id="symphony-flow-bar" class="symphony-flow-bar"></div>
+              </div>
+              <span id="symphony-multiplier" class="symphony-multiplier">1.0x</span>
+            </div>
+          </div>
           <div id="diff-pill" class="diff-pill hidden" title="Rush Hour High-Demand Mode">
             <span>⚡ RUSH HOUR</span>
           </div>
@@ -69,6 +81,12 @@
           </div>
         </div>
       </header>
+
+      <!-- Timetable Heads-Up Ribbon (City Symphony Mode) -->
+      <div id="timetable-ticker" class="timetable-ticker hidden">
+        <span class="ticker-badge">TIMETABLE</span>
+        <span id="ticker-text" class="ticker-text">Upcoming: 08:30 AM Commuter Express Inbound</span>
+      </div>
 
       <!-- Bottom Mini Motorways Inventory & Tool Dock -->
       <nav id="toolbar">
@@ -322,6 +340,13 @@
               <div class="mode-card-meta">
                 <span class="mode-name">Zen Sandbox</span>
                 <span class="mode-desc">No overflow timers, no game overs, extra road tiles for relaxed building.</span>
+              </div>
+            </button>
+            <button class="mode-card" data-mode="symphony">
+              <span class="mode-emoji">🎶</span>
+              <div class="mode-card-meta">
+                <span class="mode-name">City Symphony</span>
+                <span class="mode-desc">Daily rhythms, advance notices, timetable trains & harmonized flow multipliers!</span>
               </div>
             </button>
           </div>

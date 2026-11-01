@@ -1,4 +1,15 @@
-import { BuildingColor, Destination, DifficultyMode, GameMode, House, StationRushQueueItem, UpgradeOption } from './types';
+import {
+  BuildingColor,
+  Destination,
+  DifficultyMode,
+  GameMode,
+  House,
+  RhythmEvent,
+  RhythmPhase,
+  StationRushQueueItem,
+  SymphonyFlowStats,
+  UpgradeOption,
+} from './types';
 import { CONFIG } from './config';
 import { sound } from './sound';
 
@@ -26,6 +37,27 @@ export class LevelProgression {
   public houses: House[] = [];
   public destinations: Destination[] = [];
   private pendingStationRushes: StationRushQueueItem[] = [];
+
+  // City Symphony: Daily Rhythms & Flow Harmony State
+  public symphonyFlowStats: SymphonyFlowStats = {
+    flowPercentage: 100,
+    activeVehicles: 0,
+    stalledVehicles: 0,
+    flowStreak: 0,
+    harmonicMultiplier: 1.0,
+    rank: 'S',
+  };
+  public activeRhythmPhase: RhythmPhase = 'morning_rush';
+  public upcomingRhythmEvent: RhythmEvent | null = null;
+  public activeRhythmEvent: RhythmEvent | null = null;
+  public advanceNoticeGivenFor: Set<string> = new Set();
+  public executedEventsForDay: Set<string> = new Set();
+  public onRhythmNotice: ((event: RhythmEvent, isAdvanceNotice: boolean) => void) | null = null;
+  public onPhaseComplete: ((phase: RhythmPhase, stats: SymphonyFlowStats) => void) | null = null;
+  public onGrantBonusRoads: ((count: number) => void) | null = null;
+  public onDispatchSurfaceTrain: (() => void) | null = null;
+  private flowBreakdownTimer: number = 0;
+  private prevRhythmPhase: RhythmPhase = 'morning_rush';
 
   // Dynamic playable bounds that start framed on the inner neighborhood and expand outward over time
   public activeBounds: MapBounds = {
@@ -103,8 +135,163 @@ export class LevelProgression {
     return days[idx];
   }
 
+  public getDayDurationSeconds(): number {
+    return this.gameMode === 'symphony' ? 24 : CONFIG.GAMEPLAY.DAY_DURATION_SECONDS;
+  }
+
   public getDayProgress(): number {
-    return Math.min(1.0, this.dayTimer / CONFIG.GAMEPLAY.DAY_DURATION_SECONDS);
+    return Math.min(1.0, this.dayTimer / this.getDayDurationSeconds());
+  }
+
+  public getCityTime24(): {
+    hour: number;
+    minute: number;
+    timeString: string;
+    phase: RhythmPhase;
+    phaseTitle: string;
+    phaseIcon: string;
+    progress: number;
+  } {
+    const progress = this.getDayProgress();
+    // 0.0 -> 06:00 (dawn), 0.5 -> 18:00 (dusk), 1.0 -> 06:00 (next day)
+    const totalMinutes = (6 * 60 + progress * 24 * 60) % (24 * 60);
+    const hour24 = Math.floor(totalMinutes / 60);
+    const minute = Math.floor(totalMinutes % 60);
+
+    const period = hour24 >= 12 ? 'PM' : 'AM';
+    const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+    const timeString = `${hour12.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} ${period}`;
+
+    let phase: RhythmPhase = 'morning_rush';
+    let phaseTitle = 'Morning Suburb Commute';
+    let phaseIcon = '🌅';
+
+    const decimalHour = hour24 + minute / 60;
+    if (decimalHour >= 6.0 && decimalHour < 10.5) {
+      phase = 'morning_rush';
+      phaseTitle = 'Morning Commute';
+      phaseIcon = '🌅';
+    } else if (decimalHour >= 10.5 && decimalHour < 15.5) {
+      phase = 'midday_market';
+      phaseTitle = 'Midday Market Surge';
+      phaseIcon = '🛍️';
+    } else if (decimalHour >= 15.5 && decimalHour < 20.5) {
+      phase = 'evening_rush';
+      phaseTitle = 'Evening Rush & Rail';
+      phaseIcon = '🌆';
+    } else {
+      phase = 'night_respite';
+      phaseTitle = 'Nocturnal Respite';
+      phaseIcon = '🌙';
+    }
+
+    return {
+      hour: hour24,
+      minute,
+      timeString,
+      phase,
+      phaseTitle,
+      phaseIcon,
+      progress,
+    };
+  }
+
+  public getDailyRhythmSchedule(): RhythmEvent[] {
+    return [
+      {
+        id: 'morning_rush_start',
+        hour: 6,
+        minute: 30,
+        phase: 'morning_rush',
+        title: 'Morning Suburb Wake-Up',
+        description: 'Residential suburbs wake up! High demand from homes to workplaces.',
+        icon: '🌅',
+        targetType: 'suburb',
+        advanceNoticeLead: 4.5,
+      },
+      {
+        id: 'morning_train_arrival',
+        hour: 8,
+        minute: 30,
+        phase: 'morning_rush',
+        title: 'Commuter Express Inbound',
+        description: 'Express train arriving at Central Station! Station surge expected.',
+        icon: '🚆',
+        targetType: 'station',
+        advanceNoticeLead: 4.5,
+      },
+      {
+        id: 'midday_market_peak',
+        hour: 12,
+        minute: 30,
+        phase: 'midday_market',
+        title: 'Midday Commercial Peak',
+        description: 'High-demand retail & market trade across commercial hubs.',
+        icon: '🛍️',
+        targetType: 'market',
+        advanceNoticeLead: 4.5,
+      },
+      {
+        id: 'evening_rush_start',
+        hour: 17,
+        minute: 30,
+        phase: 'evening_rush',
+        title: 'Evening Return & Rail Inbound',
+        description: 'Commuters returning to neighborhoods + evening express train.',
+        icon: '🌆',
+        targetType: 'station',
+        advanceNoticeLead: 4.5,
+      },
+      {
+        id: 'night_respite_start',
+        hour: 20,
+        minute: 30,
+        phase: 'night_respite',
+        title: 'Nocturnal Respite & Planning',
+        description: 'Grid calms. +8 Bonus Roads granted for Blueprint drafting!',
+        icon: '🌙',
+        targetType: 'all',
+        advanceNoticeLead: 4.5,
+      },
+    ];
+  }
+
+  public updateSymphonyFlow(flowRatio: number, activeCars: number, stalledCars: number, dt: number) {
+    if (this.gameMode !== 'symphony') return;
+
+    const flowPct = activeCars === 0 ? 100 : Math.round(flowRatio * 100);
+    this.symphonyFlowStats.flowPercentage = flowPct;
+    this.symphonyFlowStats.activeVehicles = activeCars;
+    this.symphonyFlowStats.stalledVehicles = stalledCars;
+
+    if (flowPct >= 80) {
+      this.symphonyFlowStats.flowStreak += dt;
+      // Multiplier builds up to 3.5x after 18 seconds of continuous harmony
+      this.symphonyFlowStats.harmonicMultiplier = Math.min(
+        3.5,
+        1.0 + (this.symphonyFlowStats.flowStreak / 18.0) * 2.5
+      );
+      this.flowBreakdownTimer = Math.max(0, this.flowBreakdownTimer - dt * 2.0);
+    } else if (flowPct < 55) {
+      this.symphonyFlowStats.flowStreak = Math.max(0, this.symphonyFlowStats.flowStreak - dt * 1.5);
+      this.symphonyFlowStats.harmonicMultiplier = Math.max(
+        1.0,
+        this.symphonyFlowStats.harmonicMultiplier - dt * 0.25
+      );
+      this.flowBreakdownTimer += dt;
+      if (this.flowBreakdownTimer >= 11.0) {
+        this.flowBreakdownTimer = 0;
+        sound.playFlowBreakdownAlert();
+        if (this.onToast) {
+          this.onToast('⚠️ Gridlock forming — flow harmony slipping below 55%!');
+        }
+      }
+    }
+
+    if (flowPct >= 90) this.symphonyFlowStats.rank = 'S';
+    else if (flowPct >= 80) this.symphonyFlowStats.rank = 'A';
+    else if (flowPct >= 65) this.symphonyFlowStats.rank = 'B';
+    else this.symphonyFlowStats.rank = 'C';
   }
 
   public update(dt: number) {
@@ -133,9 +320,104 @@ export class LevelProgression {
       }
     }
 
-    if (this.dayTimer >= CONFIG.GAMEPLAY.DAY_DURATION_SECONDS) {
+    // City Symphony Timetable & Advance Notice Processing
+    if (this.gameMode === 'symphony') {
+      const cityTime = this.getCityTime24();
+      this.activeRhythmPhase = cityTime.phase;
+
+      // Check phase transition
+      if (this.prevRhythmPhase !== cityTime.phase) {
+        const finishedPhase = this.prevRhythmPhase;
+        this.prevRhythmPhase = cityTime.phase;
+
+        // Check if player maintained harmony in the completed phase
+        if (this.symphonyFlowStats.flowPercentage >= 75 || this.symphonyFlowStats.flowStreak >= 8.0) {
+          const bonus = Math.round(5 * this.symphonyFlowStats.harmonicMultiplier);
+          this.score += bonus;
+          sound.playFlowStateCrescendo();
+          if (this.onToast) {
+            this.onToast(`🎶 Flow Harmony Bonus! +${bonus} points (${this.symphonyFlowStats.rank}-Rank)`);
+          }
+        }
+
+        if (cityTime.phase === 'night_respite') {
+          if (this.onGrantBonusRoads) {
+            this.onGrantBonusRoads(8);
+          }
+          if (this.onToast) {
+            this.onToast('🌙 Nocturnal Respite: +8 Bonus Roads awarded for blueprint planning!');
+          }
+        }
+
+        if (this.onPhaseComplete) {
+          this.onPhaseComplete(finishedPhase, { ...this.symphonyFlowStats });
+        }
+      }
+
+      // Check daily rhythm schedule
+      const schedule = this.getDailyRhythmSchedule();
+      const currentDaySeconds = this.dayTimer;
+      const dayDuration = this.getDayDurationSeconds();
+      const progress = currentDaySeconds / dayDuration;
+      const currentDecHour = (6 + progress * 24) % 24;
+
+      let nextUpcoming: RhythmEvent | null = null;
+      let minTimeToEvent = 9999;
+
+      for (const ev of schedule) {
+        const evDecHour = ev.hour + ev.minute / 60;
+        let hourDiff = evDecHour - currentDecHour;
+        if (hourDiff < -0.1) hourDiff += 24;
+
+        const secondsUntil = (hourDiff / 24) * dayDuration;
+
+        if (secondsUntil >= 0 && secondsUntil < minTimeToEvent) {
+          minTimeToEvent = secondsUntil;
+          nextUpcoming = ev;
+        }
+
+        // Advance notice trigger (e.g. 4.5s before event)
+        const advanceKey = `${this.currentDay}_${ev.id}_adv`;
+        if (
+          secondsUntil <= ev.advanceNoticeLead &&
+          secondsUntil > 0 &&
+          !this.advanceNoticeGivenFor.has(advanceKey)
+        ) {
+          this.advanceNoticeGivenFor.add(advanceKey);
+          sound.playWaveAdvanceWarning();
+          if (this.onRhythmNotice) {
+            this.onRhythmNotice(ev, true);
+          }
+          if (this.onToast) {
+            this.onToast(`📢 Timetable Notice: ${ev.title} starting in 4 city hours!`);
+          }
+        }
+
+        // Actual event execution trigger
+        const execKey = `${this.currentDay}_${ev.id}_exec`;
+        if (secondsUntil <= 0.35 && !this.executedEventsForDay.has(execKey)) {
+          this.executedEventsForDay.add(execKey);
+          this.activeRhythmEvent = ev;
+          if (this.onRhythmNotice) {
+            this.onRhythmNotice(ev, false);
+          }
+
+          // Trigger surface commuter train if station event
+          if (ev.targetType === 'station' && this.onDispatchSurfaceTrain) {
+            this.onDispatchSurfaceTrain();
+          }
+        }
+      }
+
+      this.upcomingRhythmEvent = nextUpcoming;
+    }
+
+    const dayDuration = this.getDayDurationSeconds();
+    if (this.dayTimer >= dayDuration) {
       this.dayTimer = 0;
       this.currentDay++;
+      this.advanceNoticeGivenFor.clear();
+      this.executedEventsForDay.clear();
 
       this.expandMapBoundsForDay(this.currentDay);
 
@@ -852,6 +1134,22 @@ export class LevelProgression {
         effectiveInterval = dest.spawnInterval * 1.35;
       }
 
+      // City Symphony Daily Rhythm Demand Modulation
+      if (this.gameMode === 'symphony') {
+        if (this.activeRhythmPhase === 'morning_rush' && dest.isTrainStation) {
+          effectiveInterval *= 0.82; // Higher morning rush at commuter station
+        } else if (
+          this.activeRhythmPhase === 'midday_market' &&
+          (dest.isCircular || !dest.isTrainStation)
+        ) {
+          effectiveInterval *= 0.78; // Lively midday market shopping peak
+        } else if (this.activeRhythmPhase === 'evening_rush') {
+          effectiveInterval *= 0.85; // Evening rush peak
+        } else if (this.activeRhythmPhase === 'night_respite') {
+          effectiveInterval *= 1.65; // Calm nocturnal drift for blueprint drafting
+        }
+      }
+
       if (dest.spawnAccumulator >= effectiveInterval) {
         dest.spawnAccumulator = 0;
         if (dest.pins < dest.maxPins) {
@@ -868,7 +1166,11 @@ export class LevelProgression {
       }
 
       if (dest.pins >= CONFIG.GAMEPLAY.OVERFLOW_WARNING_THRESHOLD) {
-        dest.overflowTimer += dt;
+        const flowDampening =
+          this.gameMode === 'symphony' && this.symphonyFlowStats.flowPercentage >= 75
+            ? 0.65
+            : 1.0;
+        dest.overflowTimer += dt * flowDampening;
         sound.playWarningTick();
 
         if (dest.overflowTimer / dest.maxOverflowTime > 0.72) {
