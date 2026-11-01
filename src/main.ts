@@ -59,6 +59,14 @@ class MiniMotorwaysGame {
   private btnBlueprintCommit: HTMLElement;
   private btnBlueprintDiscard: HTMLElement;
   private zenPill: HTMLElement;
+  private symphonyPill: HTMLElement;
+  private symphonyClockEl: HTMLElement;
+  private symphonyPhaseEl: HTMLElement;
+  private symphonyFlowLabelEl: HTMLElement;
+  private symphonyFlowBarEl: HTMLElement;
+  private symphonyMultiplierEl: HTMLElement;
+  private timetableTicker: HTMLElement;
+  private tickerTextEl: HTMLElement;
   private diffPill: HTMLElement;
   private selectedGameMode: GameMode = 'standard';
   private selectedDifficulty: DifficultyMode = 'normal';
@@ -111,6 +119,14 @@ class MiniMotorwaysGame {
     this.btnBlueprintCommit = document.getElementById('btn-blueprint-commit')!;
     this.btnBlueprintDiscard = document.getElementById('btn-blueprint-discard')!;
     this.zenPill = document.getElementById('zen-pill')!;
+    this.symphonyPill = document.getElementById('symphony-pill')!;
+    this.symphonyClockEl = document.getElementById('symphony-clock')!;
+    this.symphonyPhaseEl = document.getElementById('symphony-phase')!;
+    this.symphonyFlowLabelEl = document.getElementById('symphony-flow-label')!;
+    this.symphonyFlowBarEl = document.getElementById('symphony-flow-bar')!;
+    this.symphonyMultiplierEl = document.getElementById('symphony-multiplier')!;
+    this.timetableTicker = document.getElementById('timetable-ticker')!;
+    this.tickerTextEl = document.getElementById('ticker-text')!;
     this.diffPill = document.getElementById('diff-pill')!;
     this.toastEl = document.getElementById('toast')!;
     this.upgradeModal = document.getElementById('upgrade-modal')!;
@@ -150,12 +166,25 @@ class MiniMotorwaysGame {
     this.level.gameMode = this.selectedGameMode;
     this.level.difficultyMode = this.selectedDifficulty;
     this.zenPill.classList.toggle('hidden', this.selectedGameMode !== 'zen');
+    this.symphonyPill.classList.toggle('hidden', this.selectedGameMode !== 'symphony');
     this.diffPill.classList.toggle('hidden', this.selectedDifficulty !== 'rush_hour');
     if (this.selectedGameMode === 'zen') {
       this.roadNetwork.roadsRemaining += 20;
     }
     this.roadNetwork.onTrainStationArrival = () => this.level.triggerTrainStationRush();
     this.roadNetwork.getTrainCarCount = () => this.level.getTrainCarCount();
+    this.level.onGrantBonusRoads = (count: number) => {
+      this.roadNetwork.roadsRemaining += count;
+      this.updateHUD();
+    };
+    this.level.onDispatchSurfaceTrain = () => {
+      if (!this.roadNetwork.surfaceTrain.active) {
+        this.roadNetwork.surfaceTrain.active = true;
+        this.roadNetwork.surfaceTrain.distance = 0;
+        this.roadNetwork.surfaceTrain.hasStoppedThisRun = false;
+        this.roadNetwork.surfaceTrain.stationStopTimer = 0;
+      }
+    };
     this.traffic = new TrafficSimulation(
       this.roadNetwork,
       () => this.level.houses,
@@ -165,6 +194,11 @@ class MiniMotorwaysGame {
         this.updateHUD();
       }
     );
+    this.traffic.getGameMode = () => this.level.gameMode;
+    this.traffic.getHarmonicMultiplier = () => this.level.symphonyFlowStats.harmonicMultiplier;
+    this.traffic.onUpdateFlowStats = (ratio, active, stalled, dt) => {
+      this.level.updateSymphonyFlow(ratio, active, stalled, dt);
+    };
     this.renderer = new GameRenderer(
       this.canvas,
       this.roadNetwork,
@@ -908,6 +942,42 @@ class MiniMotorwaysGame {
     this.subwaysCountEl.innerText = `${this.roadNetwork.subwaysRemaining}`;
     this.blueprintCountBadge.innerText = `${this.roadNetwork.blueprintRoads.size}`;
 
+    const isSymphony = this.level.gameMode === 'symphony';
+    this.zenPill.classList.toggle('hidden', this.level.gameMode !== 'zen');
+    this.symphonyPill.classList.toggle('hidden', !isSymphony);
+
+    if (isSymphony) {
+      const cityTime = this.level.getCityTime24();
+      const stats = this.level.symphonyFlowStats;
+      this.symphonyClockEl.innerText = cityTime.timeString;
+      this.symphonyPhaseEl.innerText = `${cityTime.phaseIcon} ${cityTime.phaseTitle.toUpperCase()}`;
+      this.symphonyFlowLabelEl.innerText = `${stats.flowPercentage}% Flow (${stats.rank})`;
+      this.symphonyFlowBarEl.style.width = `${stats.flowPercentage}%`;
+      this.symphonyMultiplierEl.innerText = `${stats.harmonicMultiplier.toFixed(1)}x`;
+
+      const upcoming = this.level.upcomingRhythmEvent;
+      if (upcoming) {
+        const evDecHour = upcoming.hour + upcoming.minute / 60;
+        const currentDecHour = (6 + this.level.getDayProgress() * 24) % 24;
+        let diff = evDecHour - currentDecHour;
+        if (diff < -0.1) diff += 24;
+        const secondsUntil = (diff / 24) * this.level.getDayDurationSeconds();
+
+        if (secondsUntil <= 6.5) {
+          this.timetableTicker.classList.remove('hidden');
+          const isAlert = secondsUntil <= upcoming.advanceNoticeLead;
+          this.timetableTicker.classList.toggle('advance-alert', isAlert);
+          this.tickerTextEl.innerText = `${upcoming.icon} Upcoming: ${upcoming.title} (${upcoming.hour.toString().padStart(2, '0')}:${upcoming.minute.toString().padStart(2, '0')})`;
+        } else {
+          this.timetableTicker.classList.add('hidden');
+        }
+      } else {
+        this.timetableTicker.classList.add('hidden');
+      }
+    } else {
+      this.timetableTicker.classList.add('hidden');
+    }
+
     const bpCount = this.roadNetwork.blueprintRoads.size;
     if (bpCount > 0 || this.currentTool === 'blueprint') {
       this.blueprintBar.classList.remove('hidden');
@@ -1083,12 +1153,25 @@ class MiniMotorwaysGame {
     this.level.gameMode = this.selectedGameMode;
     this.level.difficultyMode = this.selectedDifficulty;
     this.zenPill.classList.toggle('hidden', this.selectedGameMode !== 'zen');
+    this.symphonyPill.classList.toggle('hidden', this.selectedGameMode !== 'symphony');
     this.diffPill.classList.toggle('hidden', this.selectedDifficulty !== 'rush_hour');
     if (this.selectedGameMode === 'zen') {
       this.roadNetwork.roadsRemaining += 20;
     }
     this.roadNetwork.onTrainStationArrival = () => this.level.triggerTrainStationRush();
     this.roadNetwork.getTrainCarCount = () => this.level.getTrainCarCount();
+    this.level.onGrantBonusRoads = (count: number) => {
+      this.roadNetwork.roadsRemaining += count;
+      this.updateHUD();
+    };
+    this.level.onDispatchSurfaceTrain = () => {
+      if (!this.roadNetwork.surfaceTrain.active) {
+        this.roadNetwork.surfaceTrain.active = true;
+        this.roadNetwork.surfaceTrain.distance = 0;
+        this.roadNetwork.surfaceTrain.hasStoppedThisRun = false;
+        this.roadNetwork.surfaceTrain.stationStopTimer = 0;
+      }
+    };
     this.traffic = new TrafficSimulation(
       this.roadNetwork,
       () => this.level.houses,
@@ -1098,6 +1181,11 @@ class MiniMotorwaysGame {
         this.updateHUD();
       }
     );
+    this.traffic.getGameMode = () => this.level.gameMode;
+    this.traffic.getHarmonicMultiplier = () => this.level.symphonyFlowStats.harmonicMultiplier;
+    this.traffic.onUpdateFlowStats = (ratio, active, stalled, dt) => {
+      this.level.updateSymphonyFlow(ratio, active, stalled, dt);
+    };
     this.renderer = new GameRenderer(
       this.canvas,
       this.roadNetwork,
@@ -1205,6 +1293,22 @@ window.addEventListener('DOMContentLoaded', () => {
   } else if (params.has('testZen')) {
     (game as any).selectedGameMode = 'zen';
     game.startFromMenu();
+    game.level.isPaused = true;
+    (game as any).updateHUD();
+  } else if (params.has('testSymphony')) {
+    (game as any).selectedGameMode = 'symphony';
+    game.startFromMenu();
+    game.level.gameMode = 'symphony';
+    game.level.dayTimer = 2.5; // ~08:30 AM Morning Commute
+    game.level.symphonyFlowStats = {
+      flowPercentage: 94,
+      activeVehicles: 12,
+      stalledVehicles: 1,
+      flowStreak: 14.5,
+      harmonicMultiplier: 2.8,
+      rank: 'S',
+    };
+    game.level.upcomingRhythmEvent = game.level.getDailyRhythmSchedule()[1];
     game.level.isPaused = true;
     (game as any).updateHUD();
   }

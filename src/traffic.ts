@@ -1,4 +1,4 @@
-import { Car, Destination, FloatingText, GridCoord, House, WorldPoint } from './types';
+import { Car, Destination, FloatingText, GameMode, GridCoord, House, WorldPoint } from './types';
 import { CONFIG } from './config';
 import { Pathfinding } from './pathfinding';
 import { DIR8_OFFSETS, RoadNetwork } from './roadNetwork';
@@ -7,6 +7,13 @@ import { sound } from './sound';
 export class TrafficSimulation {
   public cars: Car[] = [];
   public floatingTexts: FloatingText[] = [];
+  public getGameMode: (() => GameMode) | null = null;
+  public getHarmonicMultiplier: (() => number) | null = null;
+  public onUpdateFlowStats:
+    | ((ratio: number, active: number, stalled: number, dt: number) => void)
+    | null = null;
+  private flowArrivalCombo: number = 0;
+  private lastArrivalTimestamp: number = 0;
   private carCounter: number = 0;
   private dispatchTimer: number = 0;
   private simTime: number = 0;
@@ -204,6 +211,25 @@ export class TrafficSimulation {
       if (ft.life >= ft.maxLife) {
         this.floatingTexts.splice(i, 1);
       }
+    }
+
+    // City Symphony: Track velocity flow ratio of all active moving vehicles
+    let activeMovingCount = 0;
+    let smoothFlowCount = 0;
+    let stalledCount = 0;
+    for (const c of this.cars) {
+      if (c.state === 'to_dest' || c.state === 'returning') {
+        activeMovingCount++;
+        if (c.speed >= CONFIG.GAMEPLAY.BASE_CAR_SPEED * 0.65 && !c.isBraking) {
+          smoothFlowCount++;
+        } else if (c.speed < CONFIG.GAMEPLAY.BASE_CAR_SPEED * 0.35 || c.isBraking) {
+          stalledCount++;
+        }
+      }
+    }
+    const flowRatio = activeMovingCount > 0 ? smoothFlowCount / activeMovingCount : 1.0;
+    if (this.onUpdateFlowStats) {
+      this.onUpdateFlowStats(flowRatio, activeMovingCount, stalledCount, dt);
     }
   }
 
@@ -724,14 +750,35 @@ export class TrafficSimulation {
             dest.pinAnimations.pop();
           }
           dest.claimedPins = Math.max(0, dest.claimedPins - 1);
-          this.onScoreIncrement(1);
-          sound.playHarmonizedPinPickup(dest.color);
+
+          const isSymphony = this.getGameMode && this.getGameMode() === 'symphony';
+          let points = 1;
+          let floatingLabel = '+1';
+
+          if (isSymphony) {
+            const now = performance.now();
+            if (now - this.lastArrivalTimestamp < 2200) {
+              this.flowArrivalCombo++;
+            } else {
+              this.flowArrivalCombo = 1;
+            }
+            this.lastArrivalTimestamp = now;
+
+            const mult = this.getHarmonicMultiplier ? this.getHarmonicMultiplier() : 1.0;
+            points = mult >= 1.8 ? Math.round(mult) : 1;
+            floatingLabel = mult > 1.3 ? `+${points} 🎶` : `+${points}`;
+            sound.playHarmonicFlowChime(this.flowArrivalCombo, dest.color);
+          } else {
+            sound.playHarmonizedPinPickup(dest.color);
+          }
+
+          this.onScoreIncrement(points);
 
           this.floatingTexts.push({
             id: `ft_${Date.now()}_${Math.random()}`,
             x: (dest.x + dest.w / 2) * CONFIG.TILE_SIZE,
             y: dest.y * CONFIG.TILE_SIZE - 6,
-            text: '+1',
+            text: floatingLabel,
             color: CONFIG.COLORS.BUILDINGS[dest.color].main,
             opacity: 1,
             scale: 0.8,

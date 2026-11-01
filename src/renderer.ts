@@ -226,6 +226,7 @@ export class GameRenderer {
 
     // 4. Unified Multi-Pass Road, Bridge, Tunnel & Rail Crossing Network
     this.renderRoadNetworkUnified();
+    this.renderSymphonyLaneFlow();
 
     // 4b. Surface Commuter Train & Active Crossing Signals
     this.renderSurfaceTrain();
@@ -241,6 +242,7 @@ export class GameRenderer {
 
     // 7. Architectural 2.5D Destinations & Parking Lots
     this.renderDestinations();
+    this.renderRhythmBeacons();
 
     // 8. Clustered Forest Trees
     this.renderTrees();
@@ -260,6 +262,9 @@ export class GameRenderer {
 
     // 12. Floating +1 / +N Score Particles
     this.renderFloatingTexts();
+
+    // 12b. City Symphony Diurnal Atmosphere (Dawn, Midday, Dusk, Nocturnal Respite)
+    this.renderDiurnalAtmosphere();
 
     this.ctx.restore();
 
@@ -285,6 +290,116 @@ export class GameRenderer {
       if (isOffScreen) {
         drawOffscreenArrow(this.ctx, width, height, screenX, screenY, stage === 'critical', this.animTime);
       }
+    }
+  }
+
+  private renderSymphonyLaneFlow() {
+    if (this.level.gameMode !== 'symphony') return;
+    const flowStats = this.level.symphonyFlowStats;
+    if (flowStats.flowPercentage < 65) return;
+
+    const ctx = this.ctx;
+    ctx.save();
+    const pulseAlpha = (Math.sin(this.animTime * 4.5) * 0.5 + 0.5) * 0.45;
+    ctx.lineWidth = 2.0;
+
+    // Subtle harmonic flow pulse behind moving vehicles
+    for (const car of this.traffic.cars) {
+      if (car.speed > CONFIG.GAMEPLAY.BASE_CAR_SPEED * 0.6 && !car.isBraking) {
+        const cx = car.x * CONFIG.TILE_SIZE;
+        const cy = car.y * CONFIG.TILE_SIZE;
+        const tailX = cx - Math.cos(car.angle) * (CONFIG.TILE_SIZE * 0.45);
+        const tailY = cy - Math.sin(car.angle) * (CONFIG.TILE_SIZE * 0.45);
+
+        const grad = ctx.createLinearGradient(tailX, tailY, cx, cy);
+        grad.addColorStop(0, 'rgba(168, 85, 247, 0)');
+        grad.addColorStop(1, `rgba(56, 189, 248, ${pulseAlpha})`);
+
+        ctx.strokeStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(tailX, tailY);
+        ctx.lineTo(cx, cy);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  private renderRhythmBeacons() {
+    if (this.level.gameMode !== 'symphony') return;
+    const upcoming = this.level.upcomingRhythmEvent;
+    if (!upcoming) return;
+
+    const ctx = this.ctx;
+    const anim = (this.animTime * 1.8) % 1.0;
+    const radius = 28 + anim * 32;
+    const alpha = (1.0 - anim) * 0.45;
+
+    if (upcoming.targetType === 'station') {
+      for (const dest of this.level.destinations) {
+        if (dest.isTrainStation) {
+          const cx = (dest.x + dest.w / 2) * CONFIG.TILE_SIZE;
+          const cy = (dest.y + dest.h / 2) * CONFIG.TILE_SIZE;
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(245, 158, 11, ${alpha})`;
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    } else if (upcoming.targetType === 'suburb') {
+      for (let i = 0; i < Math.min(4, this.level.houses.length); i++) {
+        const h = this.level.houses[i];
+        const cx = (h.x + 0.5) * CONFIG.TILE_SIZE;
+        const cy = (h.y + 0.5) * CONFIG.TILE_SIZE;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * 0.65, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(168, 85, 247, ${alpha * 0.8})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+
+  private renderDiurnalAtmosphere() {
+    if (this.level.gameMode !== 'symphony') return;
+    const timeInfo = this.level.getCityTime24();
+    const ctx = this.ctx;
+    const bounds = this.level.activeBounds;
+    const x = (bounds.minX - 3) * CONFIG.TILE_SIZE;
+    const y = (bounds.minY - 3) * CONFIG.TILE_SIZE;
+    const w = (bounds.maxX - bounds.minX + 6) * CONFIG.TILE_SIZE;
+    const h = (bounds.maxY - bounds.minY + 6) * CONFIG.TILE_SIZE;
+
+    const decHour = timeInfo.hour + timeInfo.minute / 60;
+    let overlayColor = '';
+
+    if (decHour >= 5.5 && decHour < 8.5) {
+      // Warm golden dawn
+      const dawnProgress = (decHour - 5.5) / 3.0;
+      const alpha = Math.sin(dawnProgress * Math.PI) * 0.08;
+      overlayColor = `rgba(245, 158, 11, ${alpha})`;
+    } else if (decHour >= 17.5 && decHour < 20.5) {
+      // Dusk twilight glow
+      const duskProgress = (decHour - 17.5) / 3.0;
+      const alpha = Math.sin(duskProgress * Math.PI) * 0.10;
+      overlayColor = `rgba(217, 70, 239, ${alpha})`;
+    } else if (decHour >= 20.5 || decHour < 5.5) {
+      // Gentle nocturnal indigo wash
+      overlayColor = 'rgba(15, 23, 42, 0.14)';
+    }
+
+    if (overlayColor) {
+      ctx.save();
+      ctx.fillStyle = overlayColor;
+      ctx.fillRect(x, y, w, h);
+      ctx.restore();
     }
   }
 

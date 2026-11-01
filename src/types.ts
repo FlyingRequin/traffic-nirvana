@@ -2,9 +2,33 @@ export type BuildingColor = 'red' | 'blue' | 'yellow' | 'green' | 'purple';
 
 export type MapId = 'river_valley' | 'twin_islands' | 'alpine_pass';
 
-export type GameMode = 'standard' | 'zen';
+export type GameMode = 'standard' | 'zen' | 'symphony';
 
 export type DifficultyMode = 'relaxed' | 'normal' | 'rush_hour';
+
+export type RhythmPhase = 'morning_rush' | 'midday_market' | 'evening_rush' | 'night_respite';
+
+export interface RhythmEvent {
+  id: string;
+  hour: number; // 0..24
+  minute: number; // 0..59
+  phase: RhythmPhase;
+  title: string;
+  description: string;
+  icon: string;
+  targetType: 'station' | 'market' | 'suburb' | 'all';
+  color?: BuildingColor;
+  advanceNoticeLead: number; // seconds before event to trigger heads-up warning
+}
+
+export interface SymphonyFlowStats {
+  flowPercentage: number; // 0..100% of vehicles moving smoothly
+  activeVehicles: number;
+  stalledVehicles: number;
+  flowStreak: number; // seconds of sustained harmony
+  harmonicMultiplier: number; // 1.0x .. 3.5x
+  rank: 'S' | 'A' | 'B' | 'C';
+}
 
 export interface StationRushQueueItem {
   destId: string;
