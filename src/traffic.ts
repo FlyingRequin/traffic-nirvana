@@ -776,8 +776,8 @@ export class TrafficSimulation {
 
           this.floatingTexts.push({
             id: `ft_${Date.now()}_${Math.random()}`,
-            x: (dest.x + dest.w / 2) * CONFIG.TILE_SIZE,
-            y: dest.y * CONFIG.TILE_SIZE - 6,
+            x: (dest.x + dest.w / 2) * CONFIG.TILE_SIZE + (Math.random() - 0.5) * 14,
+            y: dest.y * CONFIG.TILE_SIZE - 6 - Math.random() * 5,
             text: floatingLabel,
             color: CONFIG.COLORS.BUILDINGS[dest.color].main,
             opacity: 1,

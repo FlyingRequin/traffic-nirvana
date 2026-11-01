@@ -268,7 +268,7 @@ export class RoadNetwork {
       totalLength: totalLen,
       speed: 4.8,
       active: false,
-      cooldown: 33.0, // Delay first train arrival until Day 4 when the Central Train Station opens!
+      cooldown: 8.5, // Initial train arrival during Day 1 to service the Central Train Station!
     };
 
     const mountains = this.getMountainCenters();

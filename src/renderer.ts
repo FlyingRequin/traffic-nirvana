@@ -547,6 +547,76 @@ export class GameRenderer {
       this.ctx.lineTo(ex + nx * offset, ey + ny * offset);
       this.ctx.stroke();
     }
+
+    // 4. Central Commuter Train Terminal Passenger Platform (flush against southern rail)
+    const stX = (this.roadNetwork.stationTileX - 0.2) * tileSize;
+    const stW = 2.4 * tileSize;
+    const trackY = sy;
+    const platTopY = trackY + 5.5;
+    const platH = 16;
+
+    // Concrete platform slab
+    this.ctx.fillStyle = this.isNightMode ? '#1E293B' : '#E2E8F0';
+    this.roundRect(stX, platTopY, stW, platH, 4);
+    this.ctx.fill();
+
+    // Curbing edge
+    this.ctx.strokeStyle = this.isNightMode ? '#0F172A' : '#94A3B8';
+    this.ctx.lineWidth = 1.2;
+    this.roundRect(stX, platTopY, stW, platH, 4);
+    this.ctx.stroke();
+
+    // Safety yellow tactile warning edge
+    this.ctx.strokeStyle = '#F59E0B';
+    this.ctx.lineWidth = 2.4;
+    this.ctx.beginPath();
+    this.ctx.moveTo(stX + 2, platTopY + 1.5);
+    this.ctx.lineTo(stX + stW - 2, platTopY + 1.5);
+    this.ctx.stroke();
+
+    // Hazard dashes
+    this.ctx.strokeStyle = '#1E293B';
+    this.ctx.lineWidth = 1.2;
+    this.ctx.setLineDash([3, 4]);
+    this.ctx.beginPath();
+    this.ctx.moveTo(stX + 4, platTopY + 1.5);
+    this.ctx.lineTo(stX + stW - 4, platTopY + 1.5);
+    this.ctx.stroke();
+    this.ctx.setLineDash([]);
+
+    // Platform Waiting Canopies & Pillars
+    for (const cx of [stX + stW * 0.25, stX + stW * 0.75]) {
+      this.ctx.strokeStyle = this.isNightMode ? '#64748B' : '#475569';
+      this.ctx.lineWidth = 1.6;
+      this.ctx.beginPath();
+      this.ctx.moveTo(cx, platTopY + 4);
+      this.ctx.lineTo(cx, platTopY + platH - 2);
+      this.ctx.stroke();
+
+      this.ctx.fillStyle = this.isNightMode ? '#334155' : '#475569';
+      this.roundRect(cx - 12, platTopY + 3, 24, 4.5, 2);
+      this.ctx.fill();
+    }
+
+    // Terminal Station Identifier Badge
+    const badgeW = 76;
+    const badgeH = 14;
+    const badgeX = stX + stW / 2 - badgeW / 2;
+    const badgeY = platTopY + platH - 5;
+    this.ctx.fillStyle = '#1E293B';
+    this.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
+    this.ctx.fill();
+    this.ctx.strokeStyle = '#38BDF8';
+    this.ctx.lineWidth = 1;
+    this.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
+    this.ctx.stroke();
+
+    this.ctx.fillStyle = '#FFFFFF';
+    this.ctx.font = '800 8.5px "Plus Jakarta Sans", sans-serif';
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'middle';
+    this.ctx.fillText('🚆 TERMINAL', stX + stW / 2, badgeY + badgeH / 2);
+
     this.ctx.restore();
   }
 

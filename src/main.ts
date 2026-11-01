@@ -58,6 +58,7 @@ class MiniMotorwaysGame {
   private blueprintCostText: HTMLElement;
   private btnBlueprintCommit: HTMLElement;
   private btnBlueprintDiscard: HTMLElement;
+  private calendarPill: HTMLElement;
   private zenPill: HTMLElement;
   private symphonyPill: HTMLElement;
   private symphonyClockEl: HTMLElement;
@@ -86,6 +87,8 @@ class MiniMotorwaysGame {
   private wasPausedBeforeMenu: boolean = false;
 
   private toastTimeout: number | null = null;
+  private toastQueue: string[] = [];
+  private isShowingToast: boolean = false;
   private lastTime: number = 0;
 
   constructor() {
@@ -118,6 +121,7 @@ class MiniMotorwaysGame {
     this.blueprintCostText = document.getElementById('blueprint-cost')!;
     this.btnBlueprintCommit = document.getElementById('btn-blueprint-commit')!;
     this.btnBlueprintDiscard = document.getElementById('btn-blueprint-discard')!;
+    this.calendarPill = document.getElementById('calendar-pill')!;
     this.zenPill = document.getElementById('zen-pill')!;
     this.symphonyPill = document.getElementById('symphony-pill')!;
     this.symphonyClockEl = document.getElementById('symphony-clock')!;
@@ -165,6 +169,7 @@ class MiniMotorwaysGame {
     this.roadNetwork.defaultOccupiedCheck = (x, y) => this.level.isOccupied(x, y);
     this.level.gameMode = this.selectedGameMode;
     this.level.difficultyMode = this.selectedDifficulty;
+    this.calendarPill.classList.toggle('hidden', this.selectedGameMode === 'symphony');
     this.zenPill.classList.toggle('hidden', this.selectedGameMode !== 'zen');
     this.symphonyPill.classList.toggle('hidden', this.selectedGameMode !== 'symphony');
     this.diffPill.classList.toggle('hidden', this.selectedDifficulty !== 'rush_hour');
@@ -495,7 +500,9 @@ class MiniMotorwaysGame {
     document.body.classList.remove('in-menu');
     this.level.gameMode = this.selectedGameMode;
     this.level.difficultyMode = this.selectedDifficulty;
+    this.calendarPill.classList.toggle('hidden', this.selectedGameMode === 'symphony');
     this.zenPill.classList.toggle('hidden', this.selectedGameMode !== 'zen');
+    this.symphonyPill.classList.toggle('hidden', this.selectedGameMode !== 'symphony');
     this.diffPill.classList.toggle('hidden', this.selectedDifficulty !== 'rush_hour');
     if (this.selectedGameMode === 'zen') {
       this.roadNetwork.roadsRemaining += 20;
@@ -943,12 +950,16 @@ class MiniMotorwaysGame {
     this.blueprintCountBadge.innerText = `${this.roadNetwork.blueprintRoads.size}`;
 
     const isSymphony = this.level.gameMode === 'symphony';
+    this.calendarPill.classList.toggle('hidden', isSymphony);
     this.zenPill.classList.toggle('hidden', this.level.gameMode !== 'zen');
     this.symphonyPill.classList.toggle('hidden', !isSymphony);
 
     if (isSymphony) {
       const cityTime = this.level.getCityTime24();
       const stats = this.level.symphonyFlowStats;
+      const dayDisplay = `${this.level.getDayOfWeekName()} WK ${this.level.getWeekNumber()}`;
+      const dayEl = document.getElementById('symphony-day');
+      if (dayEl) dayEl.innerText = dayDisplay;
       this.symphonyClockEl.innerText = cityTime.timeString;
       this.symphonyPhaseEl.innerText = `${cityTime.phaseIcon} ${cityTime.phaseTitle.toUpperCase()}`;
       this.symphonyFlowLabelEl.innerText = `${stats.flowPercentage}% Flow (${stats.rank})`;
@@ -992,14 +1003,34 @@ class MiniMotorwaysGame {
   }
 
   private showToast(msg: string) {
+    if (this.toastQueue.length > 0 && this.toastQueue[this.toastQueue.length - 1] === msg) return;
+    this.toastQueue.push(msg);
+    if (!this.isShowingToast) {
+      this.processNextToast();
+    }
+  }
+
+  private processNextToast() {
+    if (this.toastQueue.length === 0) {
+      this.isShowingToast = false;
+      this.toastEl.classList.add('hidden');
+      return;
+    }
+
+    this.isShowingToast = true;
+    const msg = this.toastQueue.shift()!;
+    this.toastEl.innerText = msg;
+    this.toastEl.classList.remove('hidden');
+
     if (this.toastTimeout) {
       clearTimeout(this.toastTimeout);
     }
-    this.toastEl.innerText = msg;
-    this.toastEl.classList.remove('hidden');
     this.toastTimeout = window.setTimeout(() => {
       this.toastEl.classList.add('hidden');
-    }, 3200);
+      window.setTimeout(() => {
+        this.processNextToast();
+      }, 200);
+    }, 2800);
   }
 
   private showUpgradeModal(options: UpgradeOption[]) {
@@ -1152,6 +1183,7 @@ class MiniMotorwaysGame {
     this.roadNetwork.defaultOccupiedCheck = (x, y) => this.level.isOccupied(x, y);
     this.level.gameMode = this.selectedGameMode;
     this.level.difficultyMode = this.selectedDifficulty;
+    this.calendarPill.classList.toggle('hidden', this.selectedGameMode === 'symphony');
     this.zenPill.classList.toggle('hidden', this.selectedGameMode !== 'zen');
     this.symphonyPill.classList.toggle('hidden', this.selectedGameMode !== 'symphony');
     this.diffPill.classList.toggle('hidden', this.selectedDifficulty !== 'rush_hour');
@@ -1274,6 +1306,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (params.has('night')) {
       game.renderer.isNightMode = true;
     }
+    (game as any).updateHUD();
   } else if (params.has('testBlueprint')) {
     game.startFromMenu();
     for (let x = 8; x <= 12; x++) {

@@ -388,9 +388,6 @@ export class LevelProgression {
           if (this.onRhythmNotice) {
             this.onRhythmNotice(ev, true);
           }
-          if (this.onToast) {
-            this.onToast(`📢 Timetable Notice: ${ev.title} starting in 4 city hours!`);
-          }
         }
 
         // Actual event execution trigger
@@ -515,7 +512,9 @@ export class LevelProgression {
 
     // --- MILESTONE NEW COLOR & TRAIN STATION SPAWNS (100% Randomized Positions Each Game!) ---
     if (day === 1) {
-      // Day 1: Initial Red Store + 2 Red Houses in a separated suburb cluster
+      // Day 1: Central Commuter Train Station right along the rail corridor
+      this.spawnProceduralTrainStation(this.colorProgression[0]);
+      // Day 1: Initial Store + 2 Houses in a separated suburb cluster
       this.spawnColorStoreAndSuburb(this.colorProgression[0], 2, false);
       spawnedMilestoneToday = true;
     } else if (day === 2) {
@@ -526,8 +525,8 @@ export class LevelProgression {
       this.spawnProceduralHouse(this.colorProgression[0]);
       spawnedMilestoneToday = true;
     } else if (day === 4) {
-      // Day 4: Central Commuter Train Station along the randomized rail line + extra Red house
-      this.spawnProceduralTrainStation(this.colorProgression[0]);
+      // Day 4: Additional commuter houses to support growing station demand
+      this.spawnProceduralHouse(this.colorProgression[0]);
       this.spawnProceduralHouse(this.colorProgression[0]);
       spawnedMilestoneToday = true;
     } else if (day === 5) {
