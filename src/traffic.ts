@@ -1,4 +1,4 @@
-import { Car, Destination, FloatingText, GameMode, GridCoord, House, WorldPoint } from './types';
+import { BuildingColor, Car, Destination, FloatingText, GameMode, GridCoord, House, WorldPoint } from './types';
 import { CONFIG } from './config';
 import { Pathfinding } from './pathfinding';
 import { DIR8_OFFSETS, RoadNetwork } from './roadNetwork';
@@ -236,8 +236,18 @@ export class TrafficSimulation {
   private updateSubways(dt: number) {
     const houses = this.getHouses();
     const destinations = this.getDestinations();
+    const catchRadius = CONFIG.GAMEPLAY.SUBWAY_CATCHMENT_RADIUS;
 
     for (const sub of this.roadNetwork.subways) {
+      // 1. If currently dwelling at a station platform, countdown dwell timer
+      if (sub.dwellTimer && sub.dwellTimer > 0) {
+        sub.dwellTimer -= dt;
+        if (sub.dwellTimer > 0) {
+          continue; // Paused at station platform while passengers embark/disembark
+        }
+        sub.dwellTimer = 0;
+      }
+
       const spanDist = Math.max(
         3,
         Math.hypot(sub.end.x - sub.start.x, sub.end.y - sub.start.y)
@@ -251,21 +261,24 @@ export class TrafficSimulation {
       if (sub.trainProgress >= 1.0) {
         sub.trainProgress = 1.0;
         sub.direction = -1;
+        sub.dwellTimer = 0.9; // 0.9s platform dwell
         arrivedStation = sub.end;
         originStation = sub.start;
       } else if (sub.trainProgress <= 0.0) {
         sub.trainProgress = 0.0;
         sub.direction = 1;
+        sub.dwellTimer = 0.9; // 0.9s platform dwell
         arrivedStation = sub.start;
         originStation = sub.end;
       }
 
       if (arrivedStation && originStation) {
-        const catchRadius = CONFIG.GAMEPLAY.SUBWAY_CATCHMENT_RADIUS;
+        let totalDeliveredThisStop = 0;
+
         // Check if arrivedStation serves any nearby Destination with active demand pins
         for (const dest of destinations) {
-          const availableUnclaimedPins = dest.pins - dest.claimedPins;
-          if (availableUnclaimedPins <= 0) continue;
+          // KEY FIX: Subways deliver to active demand pins! Do NOT check claimedPins which starved subways
+          if (dest.pins <= 0) continue;
 
           const distToDest = Math.hypot(
             dest.x + dest.w * 0.5 - (arrivedStation.x + 0.5),
@@ -273,7 +286,7 @@ export class TrafficSimulation {
           );
           if (distToDest > catchRadius) continue;
 
-          // Sum up residential density (tier 1 = 1, tier 2 = 2, tier 3 = 3) of matching color near originStation
+          // Residential capacity of matching color within originStation catchment
           let connectedTierCapacity = 0;
           for (const h of houses) {
             if (h.color !== dest.color) continue;
@@ -282,37 +295,99 @@ export class TrafficSimulation {
               h.y + 0.5 - (originStation.y + 0.5)
             );
             if (distToHouse <= catchRadius) {
-              connectedTierCapacity += h.tier || 1;
+              connectedTierCapacity += (h.tier || 1) * 2;
             }
           }
 
           if (connectedTierCapacity > 0) {
-            const delivered = Math.min(
-              availableUnclaimedPins,
-              Math.min(4, connectedTierCapacity)
-            );
-            for (let k = 0; k < delivered; k++) {
-              if (dest.pins > 0) {
-                dest.pins--;
-                dest.pinAnimations.pop();
+            const delivered = Math.min(dest.pins, Math.min(4, connectedTierCapacity));
+            if (delivered > 0) {
+              totalDeliveredThisStop += delivered;
+              for (let k = 0; k < delivered; k++) {
+                if (dest.pins > 0) {
+                  dest.pins--;
+                  dest.pinAnimations.pop();
+                }
               }
-            }
-            this.onScoreIncrement(delivered);
-            sound.playHarmonizedPinPickup(dest.color);
+              // Clamp claimed pins so surface car dispatch remains balanced
+              dest.claimedPins = Math.max(0, Math.min(dest.claimedPins, dest.pins));
 
-            this.floatingTexts.push({
-              id: `ft_sub_${Date.now()}_${Math.random()}`,
-              x: (dest.x + dest.w / 2) * CONFIG.TILE_SIZE,
-              y: dest.y * CONFIG.TILE_SIZE - 8,
-              text: `+${delivered} 🚇`,
-              color: CONFIG.COLORS.SUBWAY_STATION_BG,
-              opacity: 1,
-              scale: 0.9,
-              life: 0,
-              maxLife: 1.3,
-            });
+              // Relieve building overflow warning timer
+              if (dest.overflowTimer > 0) {
+                dest.overflowTimer = Math.max(0, dest.overflowTimer - 3.0);
+              }
+
+              // Award score with game mode multipliers (e.g. City Symphony harmonic multiplier)
+              const isSymphony = this.getGameMode && this.getGameMode() === 'symphony';
+              let points = delivered;
+              let floatingLabel = `+${delivered} 🚇`;
+
+              if (isSymphony) {
+                const mult = this.getHarmonicMultiplier ? this.getHarmonicMultiplier() : 1.0;
+                points = mult >= 1.8 ? Math.round(delivered * mult) : delivered;
+                floatingLabel = mult > 1.3 ? `+${points} 🚇 🎶` : `+${points} 🚇`;
+                sound.playHarmonicFlowChime(delivered, dest.color);
+              } else {
+                sound.playHarmonizedPinPickup(dest.color);
+              }
+
+              this.onScoreIncrement(points);
+
+              this.floatingTexts.push({
+                id: `ft_sub_${Date.now()}_${Math.random()}`,
+                x: (dest.x + dest.w / 2) * CONFIG.TILE_SIZE,
+                y: dest.y * CONFIG.TILE_SIZE - 12,
+                text: floatingLabel,
+                color: CONFIG.COLORS.SUBWAY_STATION_BG,
+                opacity: 1,
+                scale: 1.1,
+                life: 0,
+                maxLife: 1.5,
+              });
+            }
           }
         }
+
+        if (totalDeliveredThisStop > 0) {
+          // Floating indicator at station entrance portal
+          this.floatingTexts.push({
+            id: `ft_sub_st_${Date.now()}_${Math.random()}`,
+            x: (arrivedStation.x + 0.5) * CONFIG.TILE_SIZE,
+            y: (arrivedStation.y + 0.5) * CONFIG.TILE_SIZE - 14,
+            text: `🚇 -${totalDeliveredThisStop}`,
+            color: '#10B981',
+            opacity: 1,
+            scale: 0.9,
+            life: 0,
+            maxLife: 1.2,
+          });
+        }
+
+        // Prepare onboard passengers for the return trip
+        let returnCommuters = 0;
+        let returnColor: BuildingColor | undefined = undefined;
+        for (const dest of destinations) {
+          const distToReturnDest = Math.hypot(
+            dest.x + dest.w * 0.5 - (originStation.x + 0.5),
+            dest.y + dest.h * 0.5 - (originStation.y + 0.5)
+          );
+          if (distToReturnDest > catchRadius) continue;
+
+          for (const h of houses) {
+            if (h.color === dest.color) {
+              const distToH = Math.hypot(
+                h.x + 0.5 - (arrivedStation.x + 0.5),
+                h.y + 0.5 - (arrivedStation.y + 0.5)
+              );
+              if (distToH <= catchRadius) {
+                returnCommuters += (h.tier || 1);
+                returnColor = h.color;
+              }
+            }
+          }
+        }
+        sub.passengers = Math.min(4, returnCommuters);
+        sub.passengerColor = returnColor;
       }
     }
   }

@@ -739,6 +739,19 @@ class MiniMotorwaysGame {
         this.showToast('No Subway lines remaining! Click an existing Subway station to move it.');
         return;
       }
+      const tile = this.roadNetwork.getTileType(coord.x, coord.y);
+      if (tile === 'water') {
+        this.showToast('⚠️ Subway station cannot be placed in water!');
+        return;
+      }
+      if (tile === 'mountain') {
+        this.showToast('⚠️ Subway station cannot be placed on steep mountain peaks!');
+        return;
+      }
+      if (this.level.isOccupied(coord.x, coord.y)) {
+        this.showToast('⚠️ Subway station entrance cannot overlap existing buildings!');
+        return;
+      }
       this.motorwayStartCoord = coord;
       return;
     }
@@ -912,13 +925,26 @@ class MiniMotorwaysGame {
       );
 
       if (dist >= 3) {
-        const created = this.roadNetwork.placeSubway(
-          this.motorwayStartCoord,
-          this.hoverCoord
-        );
-        if (created) {
-          this.showToast(`Subway Line S${created.number} opened! Automated metro shuttle active.`);
-          this.setTool('draw');
+        const startTile = this.roadNetwork.getTileType(this.motorwayStartCoord.x, this.motorwayStartCoord.y);
+        const endTile = this.roadNetwork.getTileType(this.hoverCoord.x, this.hoverCoord.y);
+        const startOccupied = this.level.isOccupied(this.motorwayStartCoord.x, this.motorwayStartCoord.y);
+        const endOccupied = this.level.isOccupied(this.hoverCoord.x, this.hoverCoord.y);
+
+        if (startTile === 'water' || endTile === 'water') {
+          this.showToast('⚠️ Subway station entrance cannot be placed in water!');
+        } else if (startTile === 'mountain' || endTile === 'mountain') {
+          this.showToast('⚠️ Subway station entrance cannot be carved into high mountain peaks!');
+        } else if (startOccupied || endOccupied) {
+          this.showToast('⚠️ Subway station entrance cannot overlap existing buildings!');
+        } else {
+          const created = this.roadNetwork.placeSubway(
+            this.motorwayStartCoord,
+            this.hoverCoord
+          );
+          if (created) {
+            this.showToast(`Subway Line S${created.number} opened! Automated metro shuttle active.`);
+            this.setTool('draw');
+          }
         }
       } else {
         this.showToast('Drag a longer distance (at least 3 tiles) to place a Subway Line.');
