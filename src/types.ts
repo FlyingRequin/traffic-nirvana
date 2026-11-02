@@ -84,6 +84,9 @@ export interface SubwayLine {
   end: GridCoord;
   trainProgress: number; // 0..1 along line
   direction: 1 | -1;
+  dwellTimer?: number; // Station dwell pause in seconds (train stopped at platform)
+  passengers?: number; // Commuters currently onboard
+  passengerColor?: BuildingColor; // Color of commuters onboard
 }
 
 export interface SurfaceTrain {

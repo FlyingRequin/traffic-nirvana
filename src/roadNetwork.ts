@@ -1419,6 +1419,8 @@ export class RoadNetwork {
       end: { ...end },
       trainProgress: 0.1,
       direction: 1,
+      dwellTimer: 0,
+      passengers: 0,
     };
 
     this.subways.push(subway);
@@ -1440,14 +1442,24 @@ export class RoadNetwork {
 
   public getSubwayNear(x: number, y: number): SubwayLine | null {
     for (const s of this.subways) {
-      const midX = (s.start.x + s.end.x) / 2;
-      const midY = (s.start.y + s.end.y) / 2;
+      // 1. Station portal hit-tests
       if (
         (Math.abs(s.start.x - x) <= 1 && Math.abs(s.start.y - y) <= 1) ||
-        (Math.abs(s.end.x - x) <= 1 && Math.abs(s.end.y - y) <= 1) ||
-        Math.hypot(midX - x, midY - y) <= 1.4
+        (Math.abs(s.end.x - x) <= 1 && Math.abs(s.end.y - y) <= 1)
       ) {
         return s;
+      }
+      // 2. Line segment distance hit-test (allows selecting/erasing along the underground tube)
+      const dx = s.end.x - s.start.x;
+      const dy = s.end.y - s.start.y;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq > 0) {
+        const t = Math.max(0, Math.min(1, ((x - s.start.x) * dx + (y - s.start.y) * dy) / lenSq));
+        const projX = s.start.x + t * dx;
+        const projY = s.start.y + t * dy;
+        if (Math.hypot(x - projX, y - projY) <= 0.85) {
+          return s;
+        }
       }
     }
     return null;

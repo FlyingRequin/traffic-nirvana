@@ -741,12 +741,37 @@ export class GameRenderer {
       this.ctx.save();
       this.ctx.translate(tx, ty);
       this.ctx.rotate(angle);
+
+      // Capsule Drop Shadow
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+      this.roundRect(-12, -4.5, 24, 12, 5.5);
+      this.ctx.fill();
+
+      // Outer teal capsule body
       this.ctx.fillStyle = CONFIG.COLORS.SUBWAY_STATION_BG;
       this.roundRect(-11, -5.5, 22, 11, 5.5);
       this.ctx.fill();
+
+      // Inner sleek white roof
       this.ctx.fillStyle = CONFIG.COLORS.SUBWAY_TRAIN;
-      this.roundRect(-7, -3, 14, 6, 3);
+      this.roundRect(-7, -3.2, 14, 6.4, 3);
       this.ctx.fill();
+
+      // Commuter passenger lights inside windows
+      if (sub.passengers && sub.passengers > 0) {
+        const dotColor =
+          sub.passengerColor && CONFIG.COLORS.BUILDINGS[sub.passengerColor]
+            ? CONFIG.COLORS.BUILDINGS[sub.passengerColor].main
+            : '#2CE5D5';
+        this.ctx.fillStyle = dotColor;
+        const count = Math.min(4, sub.passengers);
+        const startX = -((count - 1) * 3) / 2;
+        for (let p = 0; p < count; p++) {
+          this.ctx.beginPath();
+          this.ctx.arc(startX + p * 3, 0, 1.3, 0, Math.PI * 2);
+          this.ctx.fill();
+        }
+      }
       this.ctx.restore();
 
       this.ctx.restore();
@@ -775,6 +800,21 @@ export class GameRenderer {
         this.ctx.beginPath();
         this.ctx.arc(1, 2.5, 13, 0, Math.PI * 2);
         this.ctx.fill();
+
+        // Pulsing active platform halo when train is stopped and boarding
+        const isAtThisStation =
+          (sub.dwellTimer && sub.dwellTimer > 0) &&
+          ((ptX === sx && ptY === sy && sub.trainProgress <= 0.1) ||
+            (ptX === ex && ptY === ey && sub.trainProgress >= 0.9));
+
+        if (isAtThisStation) {
+          const pulse = Math.sin(performance.now() * 0.012) * 2.5;
+          this.ctx.strokeStyle = 'rgba(44, 229, 213, 0.8)';
+          this.ctx.lineWidth = 2.5;
+          this.ctx.beginPath();
+          this.ctx.arc(0, 0, 15 + pulse, 0, Math.PI * 2);
+          this.ctx.stroke();
+        }
 
         // White Outer Ring
         this.ctx.fillStyle = '#FFFFFF';
