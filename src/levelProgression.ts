@@ -1220,21 +1220,6 @@ export class LevelProgression {
       }
       if (!chosenDriveway) continue;
 
-      if (this.currentDay > 1) {
-        this.scheduleConstructionSite(
-          'house',
-          color,
-          gx,
-          gy,
-          1,
-          1,
-          chosenDriveway,
-          `New ${color.toUpperCase()} Home`,
-          3.6
-        );
-        return null;
-      }
-
       return this.createHouse(color, gx, gy, chosenDriveway);
     }
 
