@@ -60,36 +60,16 @@ export class TrafficSimulation {
   }
 
   /**
-   * Returns the destination's active parking-lot entrance road tile (matching the rendered asphalt mouth),
-   * prioritizing the bottom parking lot apron first so roads passing behind the building roof
-   * never suck cars through the building walls!
+   * Returns the destination's active parking-lot entrance road tile.
+   * Option 1 (Fixed Designated Entrance): The store is strictly bound to its
+   * designated entrance tile (`dest.entrance`). Unrelated bypass roads passing
+   * beside or behind the building will NEVER hijack or move the store entrance!
    */
   public getDestinationRoadNeighbors(dest: Destination): GridCoord[] {
     if (this.roadNetwork.hasRoad(dest.entrance.x, dest.entrance.y)) {
       return [dest.entrance];
     }
-
-    // 1. Prioritize bottom parking-lot apron & side entrances touching the parking lot (y = dest.y + 1)
-    const lotNeighbors: GridCoord[] = [
-      { x: dest.x + 1, y: dest.y + dest.h },
-      { x: dest.x, y: dest.y + dest.h },
-      { x: dest.x - 1, y: dest.y + dest.h - 1 },
-      { x: dest.x + dest.w, y: dest.y + dest.h - 1 },
-      { x: dest.x - 1, y: dest.y + dest.h },
-      { x: dest.x + dest.w, y: dest.y + dest.h },
-    ];
-    const foundLot = lotNeighbors.filter((c) => this.roadNetwork.hasRoad(c.x, c.y));
-    if (foundLot.length > 0) return [foundLot[0]];
-
-    // 2. Fallback to upper side/top perimeter ONLY if no road touches the bottom parking lot
-    const upperNeighbors: GridCoord[] = [
-      { x: dest.x - 1, y: dest.y },
-      { x: dest.x + dest.w, y: dest.y },
-      { x: dest.x, y: dest.y - 1 },
-      { x: dest.x + 1, y: dest.y - 1 },
-    ];
-    const foundUpper = upperNeighbors.filter((c) => this.roadNetwork.hasRoad(c.x, c.y));
-    return foundUpper.length > 0 ? [foundUpper[0]] : [];
+    return [];
   }
 
   /**
@@ -124,9 +104,7 @@ export class TrafficSimulation {
   }
 
   private getParkingStallWorldPos(dest: Destination, stallIndex: number): WorldPoint {
-    const connectedRoads = this.getDestinationRoadNeighbors(dest);
-    const targetTile = connectedRoads.length > 0 ? connectedRoads[0] : dest.entrance;
-    const isNorthEntrance = targetTile.y < dest.y;
+    const isNorthEntrance = dest.entrance.y < dest.y;
 
     const col = stallIndex % 2;
     const row = Math.floor(stallIndex / 2);
