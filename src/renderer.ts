@@ -1474,7 +1474,7 @@ export class GameRenderer {
    */
   private drawBuildingConnectorThroats(tileSize: number, lineWidth: number) {
     this.ctx.save();
-    this.ctx.lineWidth = lineWidth * 0.88;
+    this.ctx.lineWidth = lineWidth;
     this.ctx.lineCap = 'round';
 
     // House driveways (only extend outside the house lot when connected to a road)
@@ -1712,6 +1712,8 @@ export class GameRenderer {
   private renderHouses() {
     const tileSize = CONFIG.TILE_SIZE;
     const theme = this.getTheme();
+    const roadWidth = tileSize * 0.48;
+    const casingWidth = roadWidth + 5;
 
     for (const house of this.level.houses) {
       const cx = (house.x + 0.5) * tileSize;
@@ -1721,7 +1723,8 @@ export class GameRenderer {
       const tier = house.tier || 1;
 
       const connectedRoads = this.traffic.getHouseRoadNeighbors(house);
-      const targetTile = connectedRoads.length > 0 ? connectedRoads[0] : house.driveway;
+      const isConnected = connectedRoads.length > 0;
+      const targetTile = isConnected ? connectedRoads[0] : house.driveway;
       const driveAngle = Math.atan2(targetTile.y - house.y, targetTile.x - house.x);
 
       this.ctx.save();
@@ -1736,9 +1739,19 @@ export class GameRenderer {
       this.roundRect(-tileSize * 0.44, -tileSize * 0.40, tileSize * 0.88, tileSize * 0.80, 7);
       this.ctx.fill();
 
-      // Seamless asphalt driveway apron extending from under the building to the lot edge
+      // Distance to target tile (1 for orthogonal, sqrt(2) for diagonal)
+      const targetDist = Math.hypot(targetTile.x - house.x, targetTile.y - house.y);
+      const reach = isConnected ? targetDist * tileSize * 0.52 : tileSize * 0.44;
+      const apronLength = reach + 2;
+
+      // Outer Casing Underlay (matches road casing: theme.ROAD_CASING and casingWidth)
+      this.ctx.fillStyle = theme.ROAD_CASING;
+      this.roundRect(-2, -casingWidth / 2, apronLength, casingWidth, isConnected ? 2 : 4);
+      this.ctx.fill();
+
+      // Seamless asphalt driveway apron (matches road asphalt: theme.ROAD_ASPHALT and roadWidth)
       this.ctx.fillStyle = theme.ROAD_ASPHALT;
-      this.roundRect(-2, -11, tileSize * 0.48, 22, 5);
+      this.roundRect(-2, -roadWidth / 2, apronLength, roadWidth, isConnected ? 1 : 3);
       this.ctx.fill();
 
       // 2. Parked Cars inside driveway bays (supports up to 6 cars for High-Rises!)
