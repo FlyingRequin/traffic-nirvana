@@ -51,6 +51,7 @@ export class RoadNetwork {
   public getTrainCarCount: () => number = () => 3;
   public defaultOccupiedCheck: ((x: number, y: number) => boolean) | null = null;
   public onTrainStationArrival: (() => void) | null = null;
+  public onTrainApproaching: (() => void) | null = null;
   public onNetworkChanged: (() => void) | null = null;
   private trainRunCount: number = 0;
 
@@ -83,6 +84,8 @@ export class RoadNetwork {
       speed: 4.8,
       active: false,
       cooldown: 33.0,
+      hasStoppedThisRun: false,
+      hasWarnedThisRun: false,
     };
 
     this.generateRandomMapLayout();
@@ -269,6 +272,8 @@ export class RoadNetwork {
       speed: 4.8,
       active: false,
       cooldown: 8.5, // Initial train arrival during Day 1 to service the Central Train Station!
+      hasStoppedThisRun: false,
+      hasWarnedThisRun: false,
     };
 
     const mountains = this.getMountainCenters();
@@ -565,6 +570,20 @@ export class RoadNetwork {
         this.surfaceTrain.distance += this.surfaceTrain.speed * dt;
         // When the train pulls into the Central Station platform (around stationTileX + 5.0), stop briefly and unload commuters!
         const stopDist = this.stationTileX + 5.0;
+
+        // Advance warning ~5.5s before pulling into the station platform
+        const distRemaining = stopDist - this.surfaceTrain.distance;
+        if (
+          distRemaining > 0 &&
+          distRemaining <= this.surfaceTrain.speed * 5.5 &&
+          !this.surfaceTrain.hasWarnedThisRun
+        ) {
+          this.surfaceTrain.hasWarnedThisRun = true;
+          if (this.onTrainApproaching) {
+            this.onTrainApproaching();
+          }
+        }
+
         if (this.surfaceTrain.distance >= stopDist && !this.surfaceTrain.hasStoppedThisRun) {
           this.surfaceTrain.hasStoppedThisRun = true;
           this.surfaceTrain.stationStopTimer = 1.6;
@@ -587,6 +606,7 @@ export class RoadNetwork {
         this.surfaceTrain.active = true;
         this.surfaceTrain.distance = 0;
         this.surfaceTrain.hasStoppedThisRun = false;
+        this.surfaceTrain.hasWarnedThisRun = false;
         this.surfaceTrain.stationStopTimer = 0;
       }
     }

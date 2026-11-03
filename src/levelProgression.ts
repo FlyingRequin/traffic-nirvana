@@ -1,8 +1,10 @@
 import {
   BuildingColor,
+  ConstructionSite,
   Destination,
   DifficultyMode,
   GameMode,
+  GridCoord,
   House,
   RhythmEvent,
   RhythmPhase,
@@ -36,6 +38,9 @@ export class LevelProgression {
 
   public houses: House[] = [];
   public destinations: Destination[] = [];
+  public constructionSites: ConstructionSite[] = [];
+  public calmReliefTimer: number = 0;
+  private activeStationRushActive: boolean = false;
   private pendingStationRushes: StationRushQueueItem[] = [];
 
   // City Symphony: Daily Rhythms & Flow Harmony State
@@ -294,6 +299,56 @@ export class LevelProgression {
     else this.symphonyFlowStats.rank = 'C';
   }
 
+  public triggerCalmRelief(reason: string) {
+    if (this.calmReliefTimer > 0) return;
+    this.calmReliefTimer = 8.5;
+    sound.playReliefResolution();
+    if (this.onToast) {
+      this.onToast(`✨ Flow Restored: ${reason}! Enjoy the calm rhythm.`);
+    }
+  }
+
+  public triggerTrainApproachingNotice() {
+    sound.playWaveAdvanceWarning();
+    sound.playCrossingBell();
+    if (this.onToast) {
+      this.onToast('🚆 Central Express arriving in 5s — peak station rush approaching!');
+    }
+  }
+
+  public scheduleConstructionSite(
+    type: 'house' | 'destination',
+    color: BuildingColor,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    entrance: GridCoord,
+    label: string,
+    previewDuration = 4.5,
+    isCircular = false,
+    isTrainStation = false
+  ): ConstructionSite {
+    const site: ConstructionSite = {
+      id: `cs_${Date.now()}_${Math.random()}`,
+      type,
+      color,
+      x,
+      y,
+      w,
+      h,
+      entrance,
+      isCircular,
+      isTrainStation,
+      previewTimer: previewDuration,
+      totalDuration: previewDuration,
+      label,
+    };
+    this.constructionSites.push(site);
+    sound.playBlueprintDraft();
+    return site;
+  }
+
   public update(dt: number) {
     if (this.isPaused || this.gameOver || this.upgradePending) return;
 
@@ -317,6 +372,47 @@ export class LevelProgression {
         if (d.pinAnimations[i] < 1) {
           d.pinAnimations[i] = Math.min(1, d.pinAnimations[i] + dt * 5.0);
         }
+      }
+    }
+
+    // Update construction site blueprint previews (Feature #3: Preparation rhythm)
+    for (let i = this.constructionSites.length - 1; i >= 0; i--) {
+      const site = this.constructionSites[i];
+      site.previewTimer -= scaledDt;
+      if (site.previewTimer <= 0) {
+        this.constructionSites.splice(i, 1);
+        sound.playBlueprintCommit();
+        if (site.type === 'destination') {
+          const dest = this.createDestination(
+            site.color,
+            site.x,
+            site.y,
+            site.w,
+            site.h,
+            site.isCircular ?? false,
+            site.entrance,
+            true,
+            site.isTrainStation ?? false
+          );
+          dest.gracePeriodTimer = 9.0;
+          if (this.onToast) {
+            this.onToast(`🎉 Grand Opening: New ${site.color.toUpperCase()} Store open! (9s connection window)`);
+          }
+        } else {
+          this.createHouse(site.color, site.x, site.y, site.entrance);
+          if (this.onToast) {
+            this.onToast(`🏠 New ${site.color.toUpperCase()} Home completed!`);
+          }
+        }
+      }
+    }
+
+    // Check station rush wave completion and trigger calm relief
+    if (this.activeStationRushActive && this.pendingStationRushes.length === 0) {
+      const station = this.destinations.find((d) => d.isTrainStation);
+      if (!station || station.pins <= 1) {
+        this.activeStationRushActive = false;
+        this.triggerCalmRelief('Station commuter rush cleared');
       }
     }
 
@@ -575,13 +671,9 @@ export class LevelProgression {
       });
       const chosenColor = sortedColors[0];
 
-      const spawnedDest = this.spawnProceduralDestination(chosenColor, true);
-      if (spawnedDest) {
-        while (this.getColorSupplyRatio(chosenColor) < 4.5) {
-          const h = this.spawnProceduralHouse(chosenColor);
-          if (!h) break;
-        }
-      }
+      this.spawnProceduralDestination(chosenColor, true);
+      this.spawnProceduralHouse(chosenColor);
+      this.spawnProceduralHouse(chosenColor);
     }
 
     // 3. Procedural New Houses (Suburb Growth) balanced strictly toward underserved store colors!
@@ -962,6 +1054,7 @@ export class LevelProgression {
     }
 
     if (totalAdded > 0) {
+      this.activeStationRushActive = true;
       sound.playPinSpawn();
       if (this.onToast) {
         this.onToast(
@@ -1038,6 +1131,26 @@ export class LevelProgression {
         this.houses.some((house) => house.color === color && Math.hypot(house.x - gx, house.y - gy) < 6.0);
       if (tooCloseToSameColorHouse) continue;
 
+      if (this.currentDay > 1) {
+        this.scheduleConstructionSite(
+          'destination',
+          color,
+          gx,
+          gy,
+          w,
+          h,
+          { x: gx + 1, y: gy + h },
+          `New ${color.toUpperCase()} Store`,
+          4.8
+        );
+        if (this.onToast && notify) {
+          this.onToast(
+            `🏗️ Survey Underway: New ${color.toUpperCase()} Commercial Center planned! Prepare road connections.`
+          );
+        }
+        return null;
+      }
+
       return this.createDestination(
         color,
         gx,
@@ -1107,6 +1220,21 @@ export class LevelProgression {
       }
       if (!chosenDriveway) continue;
 
+      if (this.currentDay > 1) {
+        this.scheduleConstructionSite(
+          'house',
+          color,
+          gx,
+          gy,
+          1,
+          1,
+          chosenDriveway,
+          `New ${color.toUpperCase()} Home`,
+          3.6
+        );
+        return null;
+      }
+
       return this.createHouse(color, gx, gy, chosenDriveway);
     }
 
@@ -1120,6 +1248,12 @@ export class LevelProgression {
     for (const dest of this.destinations) {
       dest.spawnAccumulator += dt;
 
+      // Feature #3: Store Connection Grace Period (Freeze overflow timers during initial connection window)
+      if (dest.gracePeriodTimer && dest.gracePeriodTimer > 0) {
+        dest.gracePeriodTimer = Math.max(0, dest.gracePeriodTimer - dt);
+        dest.overflowTimer = 0;
+      }
+
       // Dynamic Population Demand Scaling (Option #2)
       let effectiveInterval = dest.spawnInterval;
       if (this.difficultyMode === 'rush_hour') {
@@ -1131,6 +1265,11 @@ export class LevelProgression {
         effectiveInterval = Math.max(1.15, dest.spawnInterval / popFactor);
       } else if (this.difficultyMode === 'relaxed') {
         effectiveInterval = dest.spawnInterval * 1.35;
+      }
+
+      // Feature #3: Calm Relief Period (Relaxes demand during breathing cycle)
+      if (this.calmReliefTimer > 0) {
+        effectiveInterval *= 1.35;
       }
 
       // City Symphony Daily Rhythm Demand Modulation
@@ -1158,8 +1297,8 @@ export class LevelProgression {
         }
       }
 
-      // Feature #1: Zen Sandbox Mode - no overflow timers, warning ticks, or game-over threats
-      if (isZen) {
+      // Feature #1: Zen Sandbox Mode & Store Connection Grace Period - no overflow timers or game-overs
+      if (isZen || (dest.gracePeriodTimer && dest.gracePeriodTimer > 0)) {
         dest.overflowTimer = 0;
         continue;
       }
@@ -1181,10 +1320,17 @@ export class LevelProgression {
           return;
         }
       } else {
-        if (dest.overflowTimer > 0) {
+        if (dest.overflowTimer > 3.0 && dest.pins <= 1) {
+          dest.overflowTimer = 0;
+          this.triggerCalmRelief('Commercial Hub Rescued');
+        } else if (dest.overflowTimer > 0) {
           dest.overflowTimer = Math.max(0, dest.overflowTimer - dt * 1.6);
         }
       }
+    }
+
+    if (this.calmReliefTimer > 0) {
+      this.calmReliefTimer = Math.max(0, this.calmReliefTimer - dt);
     }
 
     if (anyCritical) {
@@ -1275,6 +1421,14 @@ export class LevelProgression {
     }
     for (const d of this.destinations) {
       if (x >= d.x && x < d.x + d.w && y >= d.y && y < d.y + d.h) {
+        return true;
+      }
+    }
+    for (const s of this.constructionSites) {
+      if (x >= s.x && x < s.x + s.w && y >= s.y && y < s.y + s.h) {
+        return true;
+      }
+      if (x === s.entrance.x && y === s.entrance.y) {
         return true;
       }
     }

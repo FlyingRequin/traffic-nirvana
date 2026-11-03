@@ -242,6 +242,7 @@ export class GameRenderer {
 
     // 7. Architectural 2.5D Destinations & Parking Lots
     this.renderDestinations();
+    this.renderConstructionSites();
     this.renderRhythmBeacons();
 
     // 8. Clustered Forest Trees
@@ -1771,6 +1772,108 @@ export class GameRenderer {
     }
   }
 
+  private renderConstructionSites() {
+    const tileSize = CONFIG.TILE_SIZE;
+
+    for (const site of this.level.constructionSites) {
+      const px = site.x * tileSize;
+      const py = site.y * tileSize;
+      const pw = site.w * tileSize;
+      const ph = site.h * tileSize;
+      const cx = px + pw / 2;
+      const cy = py + ph / 2;
+      const scheme = CONFIG.COLORS.BUILDINGS[site.color];
+      const mainCol = scheme ? scheme.main : '#2B85E4';
+
+      this.ctx.save();
+
+      // 1. Blueprint excavation ground wash
+      this.ctx.fillStyle = 'rgba(43, 133, 228, 0.09)';
+      this.roundRect(px + 3, py + 3, pw - 6, ph - 6, 8);
+      this.ctx.fill();
+
+      // 2. Animated dashed blueprint perimeter
+      this.ctx.strokeStyle = mainCol;
+      this.ctx.lineWidth = 2.4;
+      this.ctx.setLineDash([6, 5]);
+      this.ctx.lineDashOffset = -this.animTime * 18;
+      this.roundRect(px + 4, py + 4, pw - 8, ph - 8, 8);
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
+
+      // 3. Corner safety cones & survey stakes
+      const corners = [
+        [px + 6, py + 6],
+        [px + pw - 6, py + 6],
+        [px + pw - 6, py + ph - 6],
+        [px + 6, py + ph - 6],
+      ];
+      for (const [cornX, cornY] of corners) {
+        this.ctx.fillStyle = '#FF793F';
+        this.ctx.beginPath();
+        this.ctx.arc(cornX, cornY, 4, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.beginPath();
+        this.ctx.arc(cornX, cornY, 1.8, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+
+      // 4. Designated Entrance / Driveway Nub Preview
+      const ex = (site.entrance.x + 0.5) * tileSize;
+      const ey = (site.entrance.y + 0.5) * tileSize;
+      const dirX = Math.sign(site.entrance.x + 0.5 - (site.x + site.w * 0.5));
+      const dirY = Math.sign(site.entrance.y + 0.5 - (site.y + site.h * 0.5));
+
+      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+      this.ctx.lineWidth = tileSize * 0.36;
+      this.ctx.lineCap = 'round';
+      this.ctx.beginPath();
+      const mouthX = cx + dirX * (pw * 0.5 - 4);
+      const mouthY = cy + dirY * (ph * 0.5 - 4);
+      this.ctx.moveTo(mouthX, mouthY);
+      this.ctx.lineTo(mouthX + dirX * (tileSize * 0.32), mouthY + dirY * (tileSize * 0.32));
+      this.ctx.stroke();
+
+      // Entrance target ring
+      this.ctx.strokeStyle = mainCol;
+      this.ctx.lineWidth = 2.0;
+      this.ctx.beginPath();
+      this.ctx.arc(ex, ey, 5.5, 0, Math.PI * 2);
+      this.ctx.stroke();
+
+      // 5. Floating Blueprint Badge with Countdown
+      const remainingSecs = Math.max(0.1, site.previewTimer).toFixed(0);
+      this.ctx.translate(cx, cy);
+
+      // Badge Drop Shadow
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.32)';
+      this.roundRect(-54, -13, 108, 26, 13);
+      this.ctx.fill();
+
+      // Badge Core
+      this.ctx.fillStyle = '#181D27';
+      this.roundRect(-52, -12, 104, 24, 12);
+      this.ctx.fill();
+
+      // Color Swatch
+      this.ctx.fillStyle = mainCol;
+      this.ctx.beginPath();
+      this.ctx.arc(-39, 0, 5, 0, Math.PI * 2);
+      this.ctx.fill();
+
+      // Text Label & Timer
+      this.ctx.fillStyle = '#FFFFFF';
+      this.ctx.font = '700 9.5px "Plus Jakarta Sans", sans-serif';
+      this.ctx.textAlign = 'left';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillText(`SURVEYING ${remainingSecs}s`, -29, 0.5);
+
+      this.ctx.restore();
+    }
+  }
+
   private renderDestinations() {
     const tileSize = CONFIG.TILE_SIZE;
     const theme = this.getTheme();
@@ -1969,6 +2072,30 @@ export class GameRenderer {
         this.ctx.save();
         this.ctx.translate(cx, cy);
         drawStoreAlert(this.ctx, stage, progress, 0, 0, halfW, halfH, this.animTime, 'over');
+        this.ctx.restore();
+      }
+
+      // Feature #3: Store Connection Grace Period indicator (calm introductory connection window)
+      if (dest.gracePeriodTimer && dest.gracePeriodTimer > 0) {
+        const graceSecs = Math.ceil(dest.gracePeriodTimer);
+        this.ctx.save();
+        this.ctx.translate(cx, py - 14);
+
+        // Shadow
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+        this.roundRect(-48, -11, 96, 22, 11);
+        this.ctx.fill();
+
+        // Amber Capsule with pulsing glow
+        this.ctx.fillStyle = '#D97706';
+        this.roundRect(-46, -10, 92, 20, 10);
+        this.ctx.fill();
+
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.font = '700 9.5px "Plus Jakarta Sans", sans-serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(`✨ OPENING (${graceSecs}s)`, 0, 0.5);
         this.ctx.restore();
       }
 
