@@ -1902,8 +1902,8 @@ export class GameRenderer {
       const scale = this.easeOutBack(dest.spawnAnimation);
 
       const connectedRoads = this.traffic.getDestinationRoadNeighbors(dest);
-      const targetTile = dest.entrance;
-      const isNorthEntrance = dest.entrance.y < dest.y;
+      const targetTile = connectedRoads.length > 0 ? connectedRoads[0] : dest.entrance;
+      const isNorthEntrance = targetTile.y < dest.y;
       const clampedX = Math.max(dest.x + 0.5, Math.min(dest.x + dest.w - 0.5, targetTile.x + 0.5));
       const clampedY = Math.max(dest.y + 0.5, Math.min(dest.y + dest.h - 0.5, targetTile.y + 0.5));
 
@@ -1969,21 +1969,6 @@ export class GameRenderer {
         this.ctx.lineTo(
           localMouthX + dirX * (tileSize * 0.46),
           localMouthY + dirY * (tileSize * 0.46)
-        );
-        this.ctx.stroke();
-      } else {
-        // Option 1 tactile driveway nub: show a clean driveway nub extending toward dest.entrance
-        // so the player clearly sees where the entrance road connects!
-        const dirX = Math.sign(targetTile.x + 0.5 - clampedX);
-        const dirY = Math.sign(targetTile.y + 0.5 - clampedY);
-        this.ctx.strokeStyle = theme.ROAD_ASPHALT;
-        this.ctx.lineWidth = tileSize * 0.38;
-        this.ctx.lineCap = 'round';
-        this.ctx.beginPath();
-        this.ctx.moveTo(localMouthX, localMouthY);
-        this.ctx.lineTo(
-          localMouthX + dirX * (tileSize * 0.22),
-          localMouthY + dirY * (tileSize * 0.22)
         );
         this.ctx.stroke();
       }
@@ -2064,7 +2049,9 @@ export class GameRenderer {
       const cy = py + ph / 2;
       const scheme = CONFIG.COLORS.BUILDINGS[dest.color];
 
-      const isNorthEntrance = dest.entrance.y < dest.y;
+      const connectedRoads = this.traffic.getDestinationRoadNeighbors(dest);
+      const targetTile = connectedRoads.length > 0 ? connectedRoads[0] : dest.entrance;
+      const isNorthEntrance = targetTile.y < dest.y;
       const basePinY = isNorthEntrance ? py + 54 : py + 18;
 
       // Determine early warning / overflow status
