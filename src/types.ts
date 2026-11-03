@@ -98,6 +98,7 @@ export interface SurfaceTrain {
   cooldown: number; // seconds until next train enters
   stationStopTimer?: number; // seconds remaining while stopped at Central Station
   hasStoppedThisRun?: boolean;
+  hasWarnedThisRun?: boolean;
 }
 
 export interface Roundabout {
@@ -139,6 +140,7 @@ export interface Destination {
   claimedPins: number;
   spawnAnimation: number;
   activeParkingStalls: boolean[]; // 4 visual parking stalls inside lot
+  gracePeriodTimer?: number; // Initial calm connection period before urgent overflow
 }
 
 export type CarState = 'to_dest' | 'at_dest' | 'returning' | 'home';
@@ -208,6 +210,22 @@ export interface UpgradeOption {
   iconType: 'motorway' | 'roundabout' | 'bridge' | 'traffic_light' | 'tunnel' | 'subway' | 'roads';
   roadsAmount: number;
   specialAmount: number;
+}
+
+export interface ConstructionSite {
+  id: string;
+  type: 'house' | 'destination';
+  color: BuildingColor;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  entrance: GridCoord;
+  isCircular?: boolean;
+  isTrainStation?: boolean;
+  previewTimer: number; // Seconds remaining in construction blueprint preview
+  totalDuration: number;
+  label: string;
 }
 
 export interface LevelSpawnEvent {

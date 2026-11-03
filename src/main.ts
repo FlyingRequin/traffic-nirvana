@@ -167,6 +167,7 @@ class MiniMotorwaysGame {
       }
     );
     this.roadNetwork.defaultOccupiedCheck = (x, y) => this.level.isOccupied(x, y);
+    (window as any).game = this;
     this.level.gameMode = this.selectedGameMode;
     this.level.difficultyMode = this.selectedDifficulty;
     this.calendarPill.classList.toggle('hidden', this.selectedGameMode === 'symphony');
@@ -177,6 +178,7 @@ class MiniMotorwaysGame {
       this.roadNetwork.roadsRemaining += 20;
     }
     this.roadNetwork.onTrainStationArrival = () => this.level.triggerTrainStationRush();
+    this.roadNetwork.onTrainApproaching = () => this.level.triggerTrainApproachingNotice();
     this.roadNetwork.getTrainCarCount = () => this.level.getTrainCarCount();
     this.level.onGrantBonusRoads = (count: number) => {
       this.roadNetwork.roadsRemaining += count;
@@ -1207,6 +1209,7 @@ class MiniMotorwaysGame {
       }
     );
     this.roadNetwork.defaultOccupiedCheck = (x, y) => this.level.isOccupied(x, y);
+    (window as any).game = this;
     this.level.gameMode = this.selectedGameMode;
     this.level.difficultyMode = this.selectedDifficulty;
     this.calendarPill.classList.toggle('hidden', this.selectedGameMode === 'symphony');
@@ -1217,6 +1220,7 @@ class MiniMotorwaysGame {
       this.roadNetwork.roadsRemaining += 20;
     }
     this.roadNetwork.onTrainStationArrival = () => this.level.triggerTrainStationRush();
+    this.roadNetwork.onTrainApproaching = () => this.level.triggerTrainApproachingNotice();
     this.roadNetwork.getTrainCarCount = () => this.level.getTrainCarCount();
     this.level.onGrantBonusRoads = (count: number) => {
       this.roadNetwork.roadsRemaining += count;

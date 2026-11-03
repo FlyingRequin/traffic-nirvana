@@ -616,6 +616,36 @@ class SoundManager {
     });
   }
 
+  public playReliefResolution() {
+    this.triggerHaptic('medium');
+    if (!this.enabled) return;
+    this.initCtx();
+    if (!this.ctx) return;
+
+    // Serene, resonant major 9th harmonic chord: C4 (261.63), G4 (392.00), D5 (587.33), E5 (659.25), B5 (987.77)
+    const chords = [261.63, 392.00, 587.33, 659.25, 987.77];
+    const now = this.ctx.currentTime;
+
+    chords.forEach((f, i) => {
+      if (!this.ctx) return;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const noteTime = now + i * 0.06;
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f, noteTime);
+
+      gain.gain.setValueAtTime(0.12, noteTime);
+      gain.gain.exponentialRampToValueAtTime(0.0005, noteTime + 0.95);
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.start(noteTime);
+      osc.stop(noteTime + 1.0);
+    });
+  }
+
   public playFlowBreakdownAlert() {
     if (!this.enabled) return;
     this.initCtx();
