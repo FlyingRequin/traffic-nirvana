@@ -999,8 +999,8 @@ export class LevelProgression {
   }
 
   /**
-   * Upgrades an existing rectangular store into a Circular High-Demand Hub,
-   * just like stores evolving in Mini Motorways.
+   * Upgrades an existing rectangular store into a Circular High-Demand Hub
+   * as the city matures.
    */
   private upgradeExistingStore() {
     const candidates = this.destinations.filter((d) => !d.isCircular && !d.isTrainStation);

@@ -1,7 +1,60 @@
+# Dependencies
 node_modules/
+.pnp
+.pnp.js
+
+# Production Build Output
 dist/
+dist-ssr/
+.vite/
+
+# Environment Variables & Secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+
+# Logs & Diagnostics
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS Metadata
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE & Editor State
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.sublime-workspace
+*.sublime-project
+*.swp
+*~
+
+# Firebase CLI State
 .firebase/
+
+# Capacitor & iOS Build Artifacts
 ios/App/Pods/
 ios/App/App/public/
-*.log
+ios/App/build/
+ios/DerivedData/
+*.xcuserstate
+*.xcuserdatad
+
+# Scratch & Temporary Testing
+scratch/
+test-results/
+coverage/

@@ -2146,7 +2146,7 @@ export class GameRenderer {
         this.ctx.restore();
       }
 
-      // 2. Iconic Mini Motorways Pie-Chart Overcrowding Timer Badge
+      // 2. Iconic Pie-Chart Overcrowding Timer Badge
       if (dest.overflowTimer > 0) {
         const progress = Math.min(1.0, dest.overflowTimer / dest.maxOverflowTime);
         const isCritical = progress > 0.65;

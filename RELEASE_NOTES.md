@@ -1,6 +1,6 @@
 # Traffic Nirvana — Release Notes (v1.0.0)
 
-Traffic Nirvana is a full-featured, elevated recreation and expansion of Dinosaur Polo Club's **Mini Motorways**, built from scratch in TypeScript with Canvas 2D rendering, dual-lane traffic physics, procedural map generation, interactive diorama aesthetics, and reactive generative audio.
+Traffic Nirvana is an independent, open-source traffic simulation puzzle game built from scratch in TypeScript with Canvas 2D rendering, dual-lane traffic physics, procedural map generation, interactive diorama aesthetics, and reactive generative audio, inspired by the genre popularized by Dinosaur Polo Club's *Mini Motorways*.
 
 ---
 
@@ -73,3 +73,10 @@ Traffic Nirvana is a full-featured, elevated recreation and expansion of Dinosau
 ### 5. 📱 Multi-Platform Deployment
 - **Web App**: Hosted on Firebase Hosting at [https://traffic-nirvana.web.app](https://traffic-nirvana.web.app).
 - **iOS App**: Packaged via Capacitor iOS (`ios/App`) with native status bar, haptic feedback, and multi-touch gestures.
+
+---
+
+## 📄 License & Disclaimer
+Distributed under the [MIT License](./LICENSE).
+
+*Disclaimer*: *Traffic Nirvana* is an independent open-source project and is not affiliated with, endorsed by, or sponsored by Dinosaur Polo Club Limited. *Mini Motorways* is a registered trademark of Dinosaur Polo Club Limited.

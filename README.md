@@ -71,4 +71,9 @@ npm run deploy
 ---
 
 ## 📄 License & Release
-See [RELEASE_NOTES.md](./RELEASE_NOTES.md) for full version history and changelog.
+Distributed under the [MIT License](./LICENSE). See [RELEASE_NOTES.md](./RELEASE_NOTES.md) for full version history and changelog.
+
+---
+
+## ⚖️ Legal & Trademark Disclaimer
+*Traffic Nirvana* is an independent open-source project created from scratch in TypeScript. It is not affiliated with, endorsed by, or sponsored by Dinosaur Polo Club Limited. *Mini Motorways* is a registered trademark of Dinosaur Polo Club Limited. All visual rendering, audio synthesis algorithms, and game code are original implementations.
