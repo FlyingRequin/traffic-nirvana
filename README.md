@@ -1,6 +1,6 @@
 # Traffic Nirvana (v1.0.0)
 
-An elevated, highly responsive web & mobile recreation of **Mini Motorways**, crafted with 3D diorama architecture, dual-lane traffic physics, express highway flyovers, surface commuter trains, reactive Disasterpeace-style audio, and blueprint planning.
+An elevated, highly responsive web & mobile game of managing traffic, crafted with 3D diorama architecture, dual-lane traffic physics, express highway flyovers, surface commuter trains, reactive Disasterpeace-style audio, and blueprint planning.
 
 🎮 **Play Live**: [https://traffic-nirvana.web.app](https://traffic-nirvana.web.app)
 
