@@ -169,6 +169,7 @@ class MiniMotorwaysGame {
       }
     );
     this.roadNetwork.defaultOccupiedCheck = (x, y) => this.level.isOccupied(x, y);
+    this.level.canConnectDrivewayOnTile = (x, y) => this.roadNetwork.getTileType(x, y) === 'grass';
     this.level.getInventoryState = () => ({
       bridges: this.roadNetwork.bridgesRemaining,
       tunnels: this.roadNetwork.tunnelsRemaining,
@@ -1419,6 +1420,7 @@ class MiniMotorwaysGame {
       }
     );
     this.roadNetwork.defaultOccupiedCheck = (x, y) => this.level.isOccupied(x, y);
+    this.level.canConnectDrivewayOnTile = (x, y) => this.roadNetwork.getTileType(x, y) === 'grass';
     this.level.getInventoryState = () => ({
       bridges: this.roadNetwork.bridgesRemaining,
       tunnels: this.roadNetwork.tunnelsRemaining,
