@@ -3,7 +3,18 @@ import { GridCoord, RoadTile } from './types';
 import { DIR8_OFFSETS, RoadNetwork } from './roadNetwork';
 import { TrafficSimulation } from './traffic';
 import { LevelProgression } from './levelProgression';
-import { drawResidential, drawDestination, drawStoreAlert, drawOffscreenArrow, drawDioramaTrainCar, StoreAlertStage } from './buildingArt';
+import {
+  ArtStyle,
+  drawResidential,
+  drawDestination,
+  drawStoreAlert,
+  drawOffscreenArrow,
+  drawDioramaTrainCar,
+  setBuildingEnvLighting,
+  StoreAlertStage,
+  mix,
+} from './buildingArt';
+import { EnvironmentSystem } from './environment';
 import { sound } from './sound';
 
 export class GameRenderer {
@@ -15,6 +26,8 @@ export class GameRenderer {
   public userPanX: number = 0;
   public userPanY: number = 0;
   public isNightMode: boolean = false;
+  public artStyle: ArtStyle = 'diorama';
+  public env: EnvironmentSystem = new EnvironmentSystem();
   public showHeatmap: boolean = false;
   private animTime: number = 0;
   private cameraInitialized: boolean = false;
@@ -179,7 +192,7 @@ export class GameRenderer {
   }
 
   private getTheme() {
-    return this.isNightMode ? CONFIG.THEMES.night : CONFIG.THEMES.day;
+    return this.env.getDynamicTheme();
   }
 
   public render(
@@ -189,6 +202,30 @@ export class GameRenderer {
     motorwayStart: GridCoord | null
   ) {
     this.animTime += 0.016;
+
+    // Update continuous Solar Ephemeris, 4-Season Palette & Weather Director
+    const symphonyTime =
+      this.level.gameMode === 'symphony'
+        ? this.level.getCityTime24().hour + this.level.getCityTime24().minute / 60
+        : null;
+    this.env.update(
+      0.016,
+      this.level.getDayProgress(),
+      this.level.getWeekNumber(),
+      symphonyTime
+    );
+    this.isNightMode = this.env.solar.nightFactor > 0.45;
+    setBuildingEnvLighting({
+      shadowDx: this.env.solar.shadowDx,
+      shadowDy: this.env.solar.shadowDy,
+      shadowAlpha: this.env.solar.shadowAlpha,
+      nightFactor: this.env.solar.nightFactor,
+      goldenHourFactor: this.env.solar.goldenHourFactor,
+      snowCover: this.env.getSnowCover(),
+      smokeIntensity: this.env.getSmokeIntensity(),
+      time: this.animTime,
+    });
+
     this.updateCameraFraming(false);
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -369,39 +406,7 @@ export class GameRenderer {
   }
 
   private renderDiurnalAtmosphere() {
-    if (this.level.gameMode !== 'symphony') return;
-    const timeInfo = this.level.getCityTime24();
-    const ctx = this.ctx;
-    const bounds = this.level.activeBounds;
-    const x = (bounds.minX - 3) * CONFIG.TILE_SIZE;
-    const y = (bounds.minY - 3) * CONFIG.TILE_SIZE;
-    const w = (bounds.maxX - bounds.minX + 6) * CONFIG.TILE_SIZE;
-    const h = (bounds.maxY - bounds.minY + 6) * CONFIG.TILE_SIZE;
-
-    const decHour = timeInfo.hour + timeInfo.minute / 60;
-    let overlayColor = '';
-
-    if (decHour >= 5.5 && decHour < 8.5) {
-      // Warm golden dawn
-      const dawnProgress = (decHour - 5.5) / 3.0;
-      const alpha = Math.sin(dawnProgress * Math.PI) * 0.08;
-      overlayColor = `rgba(245, 158, 11, ${alpha})`;
-    } else if (decHour >= 17.5 && decHour < 20.5) {
-      // Dusk twilight glow
-      const duskProgress = (decHour - 17.5) / 3.0;
-      const alpha = Math.sin(duskProgress * Math.PI) * 0.10;
-      overlayColor = `rgba(217, 70, 239, ${alpha})`;
-    } else if (decHour >= 20.5 || decHour < 5.5) {
-      // Gentle nocturnal indigo wash
-      overlayColor = 'rgba(15, 23, 42, 0.14)';
-    }
-
-    if (overlayColor) {
-      ctx.save();
-      ctx.fillStyle = overlayColor;
-      ctx.fillRect(x, y, w, h);
-      ctx.restore();
-    }
+    this.env.renderAtmosphereAndWeather(this.ctx, this.level.activeBounds);
   }
 
   private renderHillContours() {
@@ -496,6 +501,9 @@ export class GameRenderer {
       this.ctx.lineWidth = riverWidth * 0.22;
       this.ctx.stroke();
     }
+
+    // 6. Animated water current streamlines & seasonal river shimmer
+    this.env.renderRiverFlow(this.ctx, this.roadNetwork.riverChannels, tileSize);
 
     this.ctx.restore();
   }
@@ -886,13 +894,15 @@ export class GameRenderer {
       const cx = (road.x + 0.5) * tileSize;
       const cy = (road.y + 0.5) * tileSize;
 
-      // Cast shadow on water
+      // Cast dynamic solar shadow on water
+      const bShadowDx = this.env.solar.shadowDx * 7.5;
+      const bShadowDy = this.env.solar.shadowDy * 18.0;
       this.ctx.save();
       this.ctx.strokeStyle = CONFIG.COLORS.BRIDGE_SHADOW;
       this.ctx.lineWidth = casingWidth + 4;
       this.ctx.lineCap = 'round';
       this.ctx.lineJoin = 'round';
-      this.drawTileRoadGeometry(road, cx + 3, cy + 6, tileSize, buildingDirsMap, false);
+      this.drawTileRoadGeometry(road, cx + bShadowDx, cy + bShadowDy, tileSize, buildingDirsMap, false);
       this.ctx.stroke();
 
       // Concrete pier pilings in water
@@ -1735,7 +1745,7 @@ export class GameRenderer {
       this.ctx.save();
       this.ctx.rotate(driveAngle);
 
-      this.ctx.fillStyle = this.isNightMode ? '#222B3B' : scheme.lot;
+      this.ctx.fillStyle = mix(scheme.lot, '#222B3B', this.env.solar.nightFactor);
       this.roundRect(-tileSize * 0.44, -tileSize * 0.40, tileSize * 0.88, tileSize * 0.80, 7);
       this.ctx.fill();
 
@@ -1768,11 +1778,11 @@ export class GameRenderer {
       this.ctx.translate(-4.5, 0);
       this.ctx.rotate(-driveAngle);
 
-      // Render crisp 3D Diorama residential architecture (Design A)
+      // Render crisp 3D residential architecture in selected style ('diorama' | 'clay' | 'modern')
       const houseSeed = (house.x * 37 + house.y * 19 + tier * 7) % 1000;
       drawResidential(
         this.ctx,
-        'diorama',
+        this.artStyle,
         tier,
         scheme,
         this.isNightMode,
@@ -1936,13 +1946,19 @@ export class GameRenderer {
 
       // 1. Compound Base Lot & Drop Shadow
       this.ctx.fillStyle = scheme.shadow;
-      this.roundRect(-halfW + 3, -halfH + 5, halfW * 2, halfH * 2, 12);
+      this.roundRect(
+        -halfW + this.env.solar.shadowDx * 6,
+        -halfH + this.env.solar.shadowDy * 14,
+        halfW * 2,
+        halfH * 2,
+        12
+      );
       this.ctx.fill();
 
-      this.ctx.fillStyle = this.isNightMode ? '#222B3B' : scheme.lot;
+      this.ctx.fillStyle = mix(scheme.lot, '#222B3B', this.env.solar.nightFactor);
       this.roundRect(-halfW, -halfH, halfW * 2, halfH * 2, 12);
       this.ctx.fill();
-      if (this.isNightMode) {
+      if (this.env.solar.nightFactor > 0.35) {
         this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
         this.ctx.lineWidth = 1.2;
         this.ctx.stroke();
@@ -2256,15 +2272,18 @@ export class GameRenderer {
         continue;
       }
 
-      const sway = Math.sin(this.animTime * tree.swaySpeed + tree.swayOffset) * 1.2;
+      const windMult = 0.75 + this.env.windStrength * 1.35;
+      const sway = Math.sin(this.animTime * tree.swaySpeed * windMult + tree.swayOffset) * (1.2 * windMult);
       const tx = tree.x * tileSize + sway;
       const ty = tree.y * tileSize;
       const r = tree.radius;
 
-      // Directional canopy shadow
-      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.09)';
+      // Dynamic sun-angle canopy shadow
+      const tShadowDx = this.env.solar.shadowDx * 7.5;
+      const tShadowDy = this.env.solar.shadowDy * 12.5;
+      this.ctx.fillStyle = `rgba(0, 0, 0, ${(0.11 * this.env.solar.shadowAlpha).toFixed(3)})`;
       this.ctx.beginPath();
-      this.ctx.arc(tx + 3, ty + 4, r, 0, Math.PI * 2);
+      this.ctx.arc(tx + tShadowDx, ty + tShadowDy, r * 1.04, 0, Math.PI * 2);
       this.ctx.fill();
 
       // Main foliage crown
@@ -2273,10 +2292,18 @@ export class GameRenderer {
       this.ctx.arc(tx, ty, r, 0, Math.PI * 2);
       this.ctx.fill();
 
-      // Sunlit top-left highlight puff
-      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
+      // Sunlit highlight puff oriented toward the sun (opposite the shadow) + Winter snow cap
+      const snow = this.env.getSnowCover();
+      const hlOffsetX = -Math.sign(this.env.solar.shadowDx || 1) * r * 0.25;
+      const hlOffsetY = -r * 0.25;
+      this.ctx.fillStyle =
+        snow > 0.3
+          ? `rgba(248, 250, 252, ${(0.35 + snow * 0.35).toFixed(3)})`
+          : this.env.solar.goldenHourFactor > 0.15
+          ? 'rgba(254, 215, 170, 0.26)'
+          : 'rgba(255, 255, 255, 0.17)';
       this.ctx.beginPath();
-      this.ctx.arc(tx - r * 0.25, ty - r * 0.25, r * 0.55, 0, Math.PI * 2);
+      this.ctx.arc(tx + hlOffsetX, ty + hlOffsetY, r * 0.56, 0, Math.PI * 2);
       this.ctx.fill();
     }
   }
@@ -2297,12 +2324,14 @@ export class GameRenderer {
       this.ctx.save();
       this.ctx.lineCap = 'round';
 
-      // 1. Cast Shadow on Ground
+      // 1. Cast Dynamic Sun-Angle Shadow on Ground
+      const mShadowDx = this.env.solar.shadowDx * 16;
+      const mShadowDy = 8 + this.env.solar.shadowDy * 28;
       this.ctx.strokeStyle = CONFIG.COLORS.MOTORWAY_SHADOW;
       this.ctx.lineWidth = 20;
       this.ctx.beginPath();
-      this.ctx.moveTo(sx, sy + 10);
-      this.ctx.quadraticCurveTo(mx, my + 24, ex, ey + 10);
+      this.ctx.moveTo(sx + mShadowDx * 0.35, sy + mShadowDy * 0.45);
+      this.ctx.quadraticCurveTo(mx + mShadowDx, my + mShadowDy + 14, ex + mShadowDx * 0.35, ey + mShadowDy * 0.45);
       this.ctx.stroke();
 
       // 2. Outer Highway Casing & Ramp Terminals
@@ -2401,6 +2430,10 @@ export class GameRenderer {
       const px = car.x * tileSize;
       const py = car.y * tileSize;
 
+      const showBeams =
+        this.isNightMode ||
+        this.env.solar.nightFactor > 0.25 ||
+        this.env.getEffectiveWeather() === 'rain';
       this.drawDetailedCar(
         px,
         py,
@@ -2408,7 +2441,7 @@ export class GameRenderer {
         car.color,
         1.0,
         car.isBraking,
-        this.isNightMode
+        showBeams
       );
     }
   }

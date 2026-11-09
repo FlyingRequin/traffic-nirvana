@@ -301,6 +301,10 @@ class MiniMotorwaysGame {
     });
 
     document.getElementById('btn-start')!.addEventListener('click', () => this.startFromMenu());
+    document.getElementById('btn-daily-challenge')?.addEventListener('click', () => this.startDailyChallenge());
+    document.getElementById('btn-solar')?.addEventListener('click', () => this.cycleSolarLighting());
+    document.getElementById('btn-weather')?.addEventListener('click', () => this.cycleSeasonWeather());
+    document.getElementById('btn-art-style')?.addEventListener('click', () => this.cycleArtStyle());
     document.getElementById('btn-menu')!.addEventListener('click', () => this.openPauseMenu());
     document.getElementById('btn-resume')!.addEventListener('click', () => this.closePauseMenu());
     document.getElementById('btn-recenter')!.addEventListener('click', () => {
@@ -389,7 +393,11 @@ class MiniMotorwaysGame {
       } else if (e.key === 'e' || e.key === 'E') {
         this.setTool('erase');
       } else if (e.key === 'n' || e.key === 'N') {
-        this.toggleTheme();
+        this.cycleSolarLighting();
+      } else if (e.key === 'k' || e.key === 'K') {
+        this.cycleSeasonWeather();
+      } else if (e.key === 'v' || e.key === 'V') {
+        this.cycleArtStyle();
       } else if (e.key === 'm' || e.key === 'M') {
         this.toggleSound();
       } else if (e.key === '=' || e.key === '+') {
@@ -474,9 +482,21 @@ class MiniMotorwaysGame {
     });
     const best = this.getBestScores();
     document.querySelectorAll<HTMLElement>('.map-best').forEach((el) => {
-      const v = best[el.dataset.best || ''];
-      el.innerText = v ? `Best: ${v} trips` : 'Not played yet';
+      const mapKey = el.dataset.best || '';
+      const v = best[mapKey] ?? 0;
+      if (v > 0) {
+        const medal =
+          v >= 4000 ? '💎 Nirvana' : v >= 2500 ? '🥇 Gold' : v >= 1200 ? '🥈 Silver' : v >= 500 ? '🥉 Bronze' : '🏁';
+        el.innerText = `${medal} · Best: ${v} trips`;
+      } else {
+        el.innerText = 'Not played yet (🥉 500)';
+      }
     });
+    const dailyBtnLbl = document.getElementById('daily-challenge-label');
+    if (dailyBtnLbl) {
+      const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      dailyBtnLbl.innerText = `📅 Daily Challenge (${today})`;
+    }
     const nameEl = document.getElementById('pause-map-name');
     if (nameEl) nameEl.innerText = MiniMotorwaysGame.MAP_NAMES[this.currentMapId];
   }
@@ -591,10 +611,77 @@ class MiniMotorwaysGame {
   }
 
   private toggleTheme() {
-    this.renderer.isNightMode = !this.renderer.isNightMode;
-    document.body.classList.toggle('night-mode', this.renderer.isNightMode);
+    this.cycleSolarLighting();
+  }
+
+  private cycleSolarLighting() {
+    const mode = this.renderer.env.cycleLightingMode();
+    sound.triggerHaptic('light');
+    document.body.classList.toggle('night-mode', mode === 'night');
+    const labels: Record<string, string> = {
+      auto: '🌅 Auto Solar Cycle (Dawn → Day → Dusk → Night)',
+      day: '☀️ Daylight Locked',
+      dusk: '🌇 Golden Hour Dusk Locked',
+      night: '🌙 Nocturnal Night Locked',
+    };
+    this.showToast(labels[mode] || 'Solar mode updated');
+    this.updateHUD();
     this.syncMenuUI();
     this.saveSettings();
+  }
+
+  private cycleSeasonWeather() {
+    const res = this.renderer.env.cycleSeasonAndWeather();
+    sound.triggerHaptic('light');
+    this.showToast(`${res.icon} Atmosphere: ${res.label}`);
+    this.updateHUD();
+  }
+
+  private cycleArtStyle() {
+    const styles: Array<'diorama' | 'clay' | 'modern'> = ['diorama', 'clay', 'modern'];
+    const next = styles[(styles.indexOf(this.renderer.artStyle) + 1) % styles.length];
+    this.renderer.artStyle = next;
+    sound.triggerHaptic('light');
+    const labels: Record<string, string> = {
+      diorama: '🏠 Architectural Style: Crisp 3D Diorama',
+      clay: '🧸 Architectural Style: Cozy Clay Toy',
+      modern: '🏢 Architectural Style: Modern Glass & Cantilever',
+    };
+    this.showToast(labels[next]);
+    this.updateHUD();
+  }
+
+  public startDailyChallenge() {
+    const now = new Date();
+    const daySeed = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+    const maps: MapId[] = ['river_valley', 'twin_islands', 'alpine_pass'];
+    const seasons: Array<'spring' | 'summer' | 'autumn' | 'winter'> = ['spring', 'summer', 'autumn', 'winter'];
+    const weathers: Array<'blossoms' | 'rain' | 'leaves' | 'snow' | 'mist'> = ['blossoms', 'rain', 'leaves', 'snow', 'mist'];
+
+    this.currentMapId = maps[daySeed % maps.length];
+    this.selectedGameMode = daySeed % 2 === 0 ? 'symphony' : 'standard';
+    this.selectedDifficulty = 'rush_hour';
+
+    const dailySeason = seasons[(daySeed >> 2) % seasons.length];
+    const dailyWeather = weathers[(daySeed >> 3) % weathers.length];
+
+    this.inMenu = false;
+    this.startScreen.classList.add('hidden');
+    document.body.classList.remove('in-menu');
+    this.restartGame(false);
+
+    this.renderer.env.seasonOverride = dailySeason;
+    this.renderer.env.weatherOverride = dailyWeather;
+    this.renderer.env.lightingMode = 'auto';
+    this.level.isPaused = false;
+    this.setSpeed(1);
+    this.renderer.resetCamera();
+    this.updateHUD();
+
+    const dateStr = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    this.showToast(
+      `📅 Daily Challenge (${dateStr}): ${MiniMotorwaysGame.MAP_NAMES[this.currentMapId]} · ${dailySeason.toUpperCase()} · RUSH HOUR!`
+    );
   }
 
   private togglePause() {
@@ -977,6 +1064,47 @@ class MiniMotorwaysGame {
     this.subwaysCountEl.innerText = `${this.roadNetwork.subwaysRemaining}`;
     this.blueprintCountBadge.innerText = `${this.roadNetwork.blueprintRoads.size}`;
 
+    // Sync Live Solar, Season/Weather & Architectural Style HUD Badges
+    const solarIconEl = document.getElementById('solar-icon');
+    const solarLabelEl = document.getElementById('solar-label');
+    if (solarIconEl && solarLabelEl) {
+      const lm = this.renderer.env.lightingMode;
+      solarIconEl.innerText = this.renderer.env.solar.phaseIcon;
+      solarLabelEl.innerText =
+        lm === 'auto' ? this.renderer.env.solar.phaseLabel : lm.charAt(0).toUpperCase() + lm.slice(1);
+    }
+
+    const weatherIconEl = document.getElementById('weather-icon');
+    const weatherLabelEl = document.getElementById('weather-label');
+    if (weatherIconEl && weatherLabelEl) {
+      const effSeason = this.renderer.env.getEffectiveSeason();
+      const effWeather = this.renderer.env.getEffectiveWeather();
+      const seasonIcons: Record<string, string> = {
+        spring: '🌸',
+        summer: '☀️',
+        autumn: '🍂',
+        winter: '❄️',
+      };
+      const weatherIcons: Record<string, string> = {
+        clear: seasonIcons[effSeason] || '☀️',
+        rain: '🌧️',
+        mist: '🌫️',
+        snow: '❄️',
+        blossoms: '🌸',
+        leaves: '🍂',
+      };
+      weatherIconEl.innerText = weatherIcons[effWeather] || '🌸';
+      weatherLabelEl.innerText = effSeason.charAt(0).toUpperCase() + effSeason.slice(1);
+    }
+
+    const styleIconEl = document.getElementById('art-style-icon');
+    const styleLabelEl = document.getElementById('art-style-label');
+    if (styleIconEl && styleLabelEl) {
+      const st = this.renderer.artStyle;
+      styleIconEl.innerText = st === 'clay' ? '🧸' : st === 'modern' ? '🏢' : '🏠';
+      styleLabelEl.innerText = st === 'clay' ? 'Clay' : st === 'modern' ? 'Modern' : 'Diorama';
+    }
+
     const isSymphony = this.level.gameMode === 'symphony';
     this.calendarPill.classList.toggle('hidden', isSymphony);
     this.zenPill.classList.toggle('hidden', this.level.gameMode !== 'zen');
@@ -1098,8 +1226,10 @@ class MiniMotorwaysGame {
           this.roadNetwork.roundaboutsRemaining += 1;
           this.roadNetwork.trafficLightsRemaining += 2;
         } else if (opt.id === 'bundle_bridge_lights') {
-          this.roadNetwork.bridgesRemaining += 1;
+          this.roadNetwork.bridgesRemaining += 2;
           this.roadNetwork.trafficLightsRemaining += 2;
+        } else if (opt.id === 'bundle_arterial_expansion') {
+          this.roadNetwork.bridgesRemaining += 1;
         }
         this.upgradeModal.classList.add('hidden');
         this.level.completeUpgrade();
@@ -1181,6 +1311,10 @@ class MiniMotorwaysGame {
 
   private restartGame(announce: boolean = true) {
     const keepNight = this.renderer.isNightMode;
+    const keepArtStyle = this.renderer.artStyle;
+    const keepLightingMode = this.renderer.env.lightingMode;
+    const keepSeason = this.renderer.env.seasonOverride;
+    const keepWeather = this.renderer.env.weatherOverride;
     this.gameOverModal.classList.add('hidden');
     this.upgradeModal.classList.add('hidden');
     this.closePostcardModal();
@@ -1255,6 +1389,10 @@ class MiniMotorwaysGame {
       this.level
     );
     this.renderer.isNightMode = keepNight;
+    this.renderer.artStyle = keepArtStyle;
+    this.renderer.env.lightingMode = keepLightingMode;
+    this.renderer.env.seasonOverride = keepSeason;
+    this.renderer.env.weatherOverride = keepWeather;
 
     this.renderer.resize();
     this.updateHUD();

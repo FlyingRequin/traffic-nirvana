@@ -94,23 +94,60 @@ function box(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, d: 
   poly(ctx, [[x, y, z1], [x + w, y, z1], [x + w, y + d, z1], [x, y + d, z1]], c.top, c.edge);
 }
 
-/** Soft ground shadow cast to the south-east for a box of height h. */
+export interface BuildingEnvLighting {
+  shadowDx: number;
+  shadowDy: number;
+  shadowAlpha: number;
+  nightFactor: number;
+  goldenHourFactor: number;
+  snowCover: number;
+  smokeIntensity: number;
+  time: number;
+}
+
+const envLighting: BuildingEnvLighting = {
+  shadowDx: 0.55,
+  shadowDy: 0.32,
+  shadowAlpha: 1.0,
+  nightFactor: 0,
+  goldenHourFactor: 0,
+  snowCover: 0,
+  smokeIntensity: 0,
+  time: 0,
+};
+
+export function setBuildingEnvLighting(state: Partial<BuildingEnvLighting>) {
+  Object.assign(envLighting, state);
+}
+
+/** Soft ground shadow cast along the live solar vector for a box of height h. */
 function groundShadow(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, d: number, h: number, color: string, blur = 0) {
-  const sx = h * 0.55;
-  const sy = h * 0.32;
+  const sx = h * envLighting.shadowDx;
+  const sy = h * envLighting.shadowDy;
   y *= DY;
   d *= DY;
   ctx.save();
+  ctx.globalAlpha *= envLighting.shadowAlpha;
   if (blur > 0) {
     ctx.filter = `blur(${blur}px)`;
   }
   ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(x + w, y);
-  ctx.lineTo(x + w + sx, y + sy);
-  ctx.lineTo(x + w + sx, y + d + sy);
-  ctx.lineTo(x + sx, y + d + sy);
-  ctx.lineTo(x, y + d);
+  if (sx >= 0) {
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w + sx, y + sy);
+    ctx.lineTo(x + w + sx, y + d + sy);
+    ctx.lineTo(x + sx, y + d + sy);
+    ctx.lineTo(x, y + d);
+  } else {
+    // Dawn / morning sun in the East -> shadow stretches West (sx < 0)
+    ctx.moveTo(x + w, y);
+    ctx.lineTo(x + w, y + d);
+    ctx.lineTo(x + w + sx, y + d + sy);
+    ctx.lineTo(x + sx, y + d + sy);
+    ctx.lineTo(x + sx, y + sy);
+    ctx.lineTo(x, y);
+  }
   ctx.closePath();
   ctx.fillStyle = color;
   ctx.fill();
@@ -139,10 +176,12 @@ function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: n
 }
 
 function windowColors(night: boolean) {
+  const isDuskOrNight = night || envLighting.nightFactor > 0.25;
+  const gf = envLighting.goldenHourFactor;
   return {
-    lit: night ? '#FFE08A' : 'rgba(214, 236, 255, 0.95)',
-    litDim: night ? '#F5C35C' : 'rgba(170, 205, 235, 0.95)',
-    dark: night ? 'rgba(30, 38, 60, 0.95)' : 'rgba(64, 92, 128, 0.85)',
+    lit: isDuskOrNight ? '#FFE08A' : gf > 0.15 ? mix('#D6ECFF', '#FDE68A', gf * 0.7) : 'rgba(214, 236, 255, 0.95)',
+    litDim: isDuskOrNight ? '#F5C35C' : gf > 0.15 ? mix('#AACDEB', '#F59E0B', gf * 0.55) : 'rgba(170, 205, 235, 0.95)',
+    dark: isDuskOrNight ? 'rgba(30, 38, 60, 0.95)' : 'rgba(64, 92, 128, 0.85)',
   };
 }
 
@@ -157,7 +196,8 @@ function hashRand(seed: number, i: number): number {
 // readable facades with doors/windows, rooftop props.
 // ============================================================================
 function dioramaHouse(ctx: CanvasRenderingContext2D, p: ArtPalette, night: boolean, seed: number) {
-  const wallTone = mix(p.main, '#FFFFFF', 0.78);
+  const gf = envLighting.goldenHourFactor;
+  const wallTone = gf > 0.1 ? mix(mix(p.main, '#FFFFFF', 0.78), '#FED7AA', gf * 0.35) : mix(p.main, '#FFFFFF', 0.78);
   const wallSide = mix(p.main, '#B9A994', 0.62);
   const win = windowColors(night);
   const x = -10, y = -8, w = 20, d = 16, h = 10;
@@ -167,10 +207,11 @@ function dioramaHouse(ctx: CanvasRenderingContext2D, p: ArtPalette, night: boole
   box(ctx, x, y, w, d, 0, h, { top: wallTone, south: wallTone, east: wallSide });
 
   // Door + windows on the south facade
+  const nf = night ? 1 : envLighting.nightFactor;
   southWindow(ctx, y + d, -2, 0, 4, 6.2, p.wall);
   southWindow(ctx, y + d, -1.4, 0.4, 2.8, 5.2, mix(p.wall, '#000000', 0.25));
-  southWindow(ctx, y + d, -8, 3, 4, 3.6, win.lit);
-  southWindow(ctx, y + d, 4, 3, 4, 3.6, hashRand(seed, 1) > 0.5 || !night ? win.lit : win.dark);
+  southWindow(ctx, y + d, -8, 3, 4, 3.6, nf < 0.25 || hashRand(seed, 0) < nf * 0.9 ? win.lit : win.dark);
+  southWindow(ctx, y + d, 4, 3, 4, 3.6, nf < 0.25 || hashRand(seed, 1) < nf * 0.75 ? win.lit : win.dark);
   eastWindow(ctx, x + w, -5, 3, 4, 3.6, win.litDim);
   eastWindow(ctx, x + w, 1.5, 3, 4, 3.6, win.litDim);
 
@@ -178,12 +219,15 @@ function dioramaHouse(ctx: CanvasRenderingContext2D, p: ArtPalette, night: boole
   const o = 1.6;
   const ridgeZ = h + 6.5;
   const rx0 = x - o, rx1 = x + w + o, ry0 = y - o, ry1 = y + d + 0.8;
+  const snow = envLighting.snowCover;
+  const northRoofCol = snow > 0.2 ? mix(p.roofLight, '#F8FAFC', snow * 0.75) : p.roofLight;
+  const southRoofCol = snow > 0.2 ? mix(p.main, '#E2E8F0', snow * 0.65) : p.main;
   // East gable triangle
   poly(ctx, [[x + w, y, h], [x + w, y + d, h], [x + w, 0, ridgeZ]], wallSide);
   // North slope (lit by NW sun)
-  poly(ctx, [[rx0, ry0, h - 0.6], [rx1, ry0, h - 0.6], [rx1, 0, ridgeZ], [rx0, 0, ridgeZ]], p.roofLight);
+  poly(ctx, [[rx0, ry0, h - 0.6], [rx1, ry0, h - 0.6], [rx1, 0, ridgeZ], [rx0, 0, ridgeZ]], northRoofCol);
   // South slope
-  poly(ctx, [[rx0, 0, ridgeZ], [rx1, 0, ridgeZ], [rx1, ry1, h - 0.6], [rx0, ry1, h - 0.6]], p.main);
+  poly(ctx, [[rx0, 0, ridgeZ], [rx1, 0, ridgeZ], [rx1, ry1, h - 0.6], [rx0, ry1, h - 0.6]], southRoofCol);
   // Shingle courses
   ctx.save();
   ctx.strokeStyle = rgba('#000000', 0.12);
@@ -205,12 +249,21 @@ function dioramaHouse(ctx: CanvasRenderingContext2D, p: ArtPalette, night: boole
 
   // Chimney on the north slope
   box(ctx, 4, -5.5, 3, 3, h + 2, 8.5, { top: '#5B4A3F', south: '#8C6E5D', east: '#6E5547' });
-  if (night) {
-    ctx.fillStyle = 'rgba(200, 200, 210, 0.25)';
-    const [sx, sy] = proj([5.5, -4, h + 13]);
-    ctx.beginPath();
-    ctx.arc(sx, sy, 2.2, 0, Math.PI * 2);
-    ctx.fill();
+  const smokeStr = Math.max(night ? 0.8 : 0, envLighting.smokeIntensity);
+  if (smokeStr > 0.12) {
+    const t = envLighting.time + seed * 1.7;
+    for (let k = 0; k < 3; k++) {
+      const puffAge = (t * 0.65 + k * 0.33) % 1;
+      const liftZ = h + 11.5 + puffAge * 9.5;
+      const driftX = 5.5 + puffAge * 4.5 + Math.sin(t * 2 + k) * 0.8;
+      const [sx, sy] = proj([driftX, -4, liftZ]);
+      const rad = 1.4 + puffAge * 2.4;
+      const alpha = (1 - puffAge) * 0.34 * smokeStr;
+      ctx.fillStyle = `rgba(215, 220, 230, ${alpha.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }
 

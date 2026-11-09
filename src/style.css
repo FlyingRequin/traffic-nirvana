@@ -1512,3 +1512,60 @@ body.night-mode .symphony-flow-track {
   line-height: 1.25;
   color: var(--text-secondary);
 }
+
+.env-pill-btn {
+  width: auto;
+  padding: 0 10px;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.env-btn-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.start-actions-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.start-actions-row .start-btn {
+  margin-top: 0;
+}
+
+.daily-challenge-btn {
+  margin-top: 0;
+  border: 1.5px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  font-weight: 800;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+body.night .daily-challenge-btn {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.16);
+}
+
+@media (max-width: 760px) {
+  .env-btn-label {
+    display: none;
+  }
+  .env-pill-btn {
+    padding: 0 7px;
+  }
+  .start-actions-row {
+    grid-template-columns: 1fr;
+  }
+}
+

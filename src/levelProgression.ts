@@ -1162,6 +1162,25 @@ export class LevelProgression {
         notify
       );
     }
+
+    // Fallback Vertical Store Densification when late-game 34x22 grid is saturated:
+    const upgradeCandidate =
+      this.destinations.find((d) => d.color === color && !d.isCircular && !d.isTrainStation) ||
+      this.destinations.find((d) => !d.isCircular && !d.isTrainStation) ||
+      this.destinations.find((d) => d.color === color && !d.isTrainStation);
+    if (upgradeCandidate) {
+      if (!upgradeCandidate.isCircular) {
+        upgradeCandidate.isCircular = true;
+      }
+      upgradeCandidate.maxPins = Math.min(12, upgradeCandidate.maxPins + 2);
+      upgradeCandidate.spawnInterval = Math.max(1.75, upgradeCandidate.spawnInterval * 0.85);
+      upgradeCandidate.gracePeriodTimer = 6.0;
+      if (this.onToast && notify) {
+        this.onToast(
+          `🏢 Downtown Densification: ${upgradeCandidate.color.toUpperCase()} Store expanded into High-Capacity Hub!`
+        );
+      }
+    }
     return null;
   }
 
@@ -1335,7 +1354,7 @@ export class LevelProgression {
       {
         id: 'bundle_subway',
         title: '1 Subway Line & 1 Tunnel',
-        subtitle: `+ ${25 + extraRoads} Road Tiles`,
+        subtitle: `+ ${25 + extraRoads} Road Tiles (Metro Transit)`,
         iconType: 'subway',
         roadsAmount: 25 + extraRoads,
         specialAmount: 1,
@@ -1343,35 +1362,59 @@ export class LevelProgression {
       {
         id: 'bundle_motorway',
         title: '1 Motorway & 1 Bridge',
-        subtitle: `+ ${25 + extraRoads} Road Tiles`,
+        subtitle: `+ ${25 + extraRoads} Road Tiles (Express Flyover)`,
         iconType: 'motorway',
         roadsAmount: 25 + extraRoads,
         specialAmount: 1,
       },
       {
-        id: 'bundle_tunnel',
-        title: '2 Mountain Tunnels & 1 Bridge',
-        subtitle: `+ ${30 + extraRoads} Road Tiles`,
-        iconType: 'tunnel',
-        roadsAmount: 30 + extraRoads,
+        id: 'bundle_bridge_lights',
+        title: '2 River Bridges & 2 Smart Lights',
+        subtitle: `+ ${28 + extraRoads} Road Tiles (Island & River Link)`,
+        iconType: 'bridge',
+        roadsAmount: 28 + extraRoads,
         specialAmount: 2,
       },
       {
         id: 'bundle_roundabout',
         title: '1 Roundabout & 2 Traffic Lights',
-        subtitle: `+ ${30 + extraRoads} Road Tiles`,
+        subtitle: `+ ${30 + extraRoads} Road Tiles (Flow Control)`,
         iconType: 'roundabout',
         roadsAmount: 30 + extraRoads,
         specialAmount: 1,
       },
+      {
+        id: 'bundle_tunnel',
+        title: '2 Mountain Tunnels & 1 Bridge',
+        subtitle: `+ ${30 + extraRoads} Road Tiles (Alpine Bore)`,
+        iconType: 'tunnel',
+        roadsAmount: 30 + extraRoads,
+        specialAmount: 2,
+      },
+      {
+        id: 'bundle_arterial_expansion',
+        title: 'Arterial Highway Expansion',
+        subtitle: `+ ${45 + extraRoads} Road Tiles & 1 Bridge`,
+        iconType: 'roads',
+        roadsAmount: 45 + extraRoads,
+        specialAmount: 1,
+      },
     ];
 
-    const idxA = (week - 1) % allBundles.length;
-    const idxB = week % allBundles.length;
-    const options: UpgradeOption[] = [allBundles[idxA], allBundles[idxB]];
+    // Pick 3 distinct upgrade cards so players have rich strategic agency every Sunday
+    const pool = [...allBundles];
+    const picked: UpgradeOption[] = [];
+    // Ensure a high-impact transit option (Motorway or Subway) is always in the pool
+    const primaryIdx = (week + Math.floor(Math.random() * 2)) % 2;
+    picked.push(pool.splice(primaryIdx, 1)[0]);
+
+    while (picked.length < 3 && pool.length > 0) {
+      const rIdx = Math.floor(Math.random() * pool.length);
+      picked.push(pool.splice(rIdx, 1)[0]);
+    }
 
     if (this.onUpgradeModal) {
-      this.onUpgradeModal(options);
+      this.onUpgradeModal(picked);
     }
   }
 

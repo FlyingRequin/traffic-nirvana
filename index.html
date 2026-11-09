@@ -68,6 +68,20 @@
         </div>
 
         <div class="hud-right">
+          <div class="control-group env-control-group">
+            <button id="btn-solar" class="icon-btn env-pill-btn" title="Cycle Solar Lighting: Auto Cycle / Day / Golden Dusk / Night (N)">
+              <span id="solar-icon">🌤️</span>
+              <span id="solar-label" class="env-btn-label">Auto</span>
+            </button>
+            <button id="btn-weather" class="icon-btn env-pill-btn" title="Cycle Season & Weather: Auto / Spring Blossoms / Rain / Autumn Leaves / Winter Snow (K)">
+              <span id="weather-icon">🌸</span>
+              <span id="weather-label" class="env-btn-label">Spring</span>
+            </button>
+            <button id="btn-art-style" class="icon-btn env-pill-btn" title="Switch Architectural Style: Diorama / Clay Toy / Modern Glass (V)">
+              <span id="art-style-icon">🏠</span>
+              <span id="art-style-label" class="env-btn-label">Diorama</span>
+            </button>
+          </div>
           <div class="control-group">
             <button id="btn-pause" class="icon-btn" title="Pause (Space)">
               <svg viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
@@ -387,7 +401,12 @@
             </button>
           </div>
 
-          <button id="btn-start" class="action-btn start-btn">Start Building</button>
+          <div class="start-actions-row">
+            <button id="btn-start" class="action-btn start-btn">Start Building</button>
+            <button id="btn-daily-challenge" class="secondary-btn daily-challenge-btn" title="Play today's featured city, season & rush challenge">
+              <span id="daily-challenge-label">📅 Daily Commute Challenge</span>
+            </button>
+          </div>
 
           <details class="how-to">
             <summary>How to play</summary>
