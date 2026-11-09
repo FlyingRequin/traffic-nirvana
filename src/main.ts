@@ -169,6 +169,16 @@ class MiniMotorwaysGame {
       }
     );
     this.roadNetwork.defaultOccupiedCheck = (x, y) => this.level.isOccupied(x, y);
+    this.level.getInventoryState = () => ({
+      bridges: this.roadNetwork.bridgesRemaining,
+      tunnels: this.roadNetwork.tunnelsRemaining,
+      roundabouts: this.roadNetwork.roundaboutsRemaining,
+      lights: this.roadNetwork.trafficLightsRemaining,
+      motorways: this.roadNetwork.motorwaysRemaining,
+      subways: this.roadNetwork.subwaysRemaining,
+      arterialLevel: this.roadNetwork.arterialLevel,
+      mapId: this.currentMapId,
+    });
     (window as any).game = this;
     this.level.gameMode = this.selectedGameMode;
     this.level.difficultyMode = this.selectedDifficulty;
@@ -1409,6 +1419,16 @@ class MiniMotorwaysGame {
       }
     );
     this.roadNetwork.defaultOccupiedCheck = (x, y) => this.level.isOccupied(x, y);
+    this.level.getInventoryState = () => ({
+      bridges: this.roadNetwork.bridgesRemaining,
+      tunnels: this.roadNetwork.tunnelsRemaining,
+      roundabouts: this.roadNetwork.roundaboutsRemaining,
+      lights: this.roadNetwork.trafficLightsRemaining,
+      motorways: this.roadNetwork.motorwaysRemaining,
+      subways: this.roadNetwork.subwaysRemaining,
+      arterialLevel: this.roadNetwork.arterialLevel,
+      mapId: this.currentMapId,
+    });
     (window as any).game = this;
     this.level.gameMode = this.selectedGameMode;
     this.level.difficultyMode = this.selectedDifficulty;

@@ -1093,21 +1093,25 @@ export class TrafficSimulation {
   /**
    * Tracks completed commuter deliveries at a store and automatically promotes
    * the store's architectural & capacity tier at service milestones:
-   * - 10 deliveries: Tier 1 Market -> Tier 2 Department Galleria
-   * - 24 deliveries: Tier 2 Galleria -> Tier 3 Geodesic Rotunda Hub
-   * - 42 deliveries: Tier 3 Rotunda -> Tier 4 Mega-Commerce Arcology Tower
+   * - 14 deliveries: Tier 1 Market -> Tier 2 Department Galleria
+   * - 34 deliveries: Tier 2 Galleria -> Tier 3 Geodesic Rotunda Hub
+   * - 64 deliveries: Tier 3 Rotunda -> Tier 4 Mega-Commerce Arcology Tower (up to ~38% flagship cap)
    */
   private recordStoreService(dest: Destination, amount: number) {
     dest.servicedCount = (dest.servicedCount || 0) + amount;
     if (dest.isTrainStation) return;
 
     const currentTier = dest.tier || (dest.isCircular ? 3 : 1);
+    const nonStationStores = this.getDestinations().filter((d) => !d.isTrainStation);
+    const tier4Count = nonStationStores.filter((d) => (d.tier || 1) === 4).length;
+    const maxTier4Allowed = Math.max(1, Math.floor(nonStationStores.length * 0.38));
+
     let nextTier: 2 | 3 | 4 | null = null;
-    if (currentTier === 1 && dest.servicedCount >= 10) {
+    if (currentTier === 1 && dest.servicedCount >= 14) {
       nextTier = 2;
-    } else if (currentTier === 2 && dest.servicedCount >= 24) {
+    } else if (currentTier === 2 && dest.servicedCount >= 34) {
       nextTier = 3;
-    } else if (currentTier === 3 && dest.servicedCount >= 42) {
+    } else if (currentTier === 3 && dest.servicedCount >= 64 && tier4Count < maxTier4Allowed) {
       nextTier = 4;
     }
 
@@ -1116,7 +1120,7 @@ export class TrafficSimulation {
       dest.isCircular = nextTier === 3;
       dest.spawnAnimation = 0.25;
       dest.maxPins = CONFIG.GAMEPLAY.MAX_PINS_PER_DESTINATION + (nextTier - 1);
-      dest.spawnInterval = Math.max(1.9, dest.spawnInterval * 0.88);
+      dest.spawnInterval = Math.max(2.05, dest.spawnInterval * 0.9);
       sound.playMotorwayPlacement();
 
       const badgeText =

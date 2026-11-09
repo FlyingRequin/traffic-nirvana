@@ -2304,11 +2304,11 @@ export class GameRenderer {
         const serviced = dest.servicedCount || 0;
         const tierProgress =
           storeTier === 1
-            ? Math.min(1, serviced / 10)
+            ? Math.min(1, serviced / 14)
             : storeTier === 2
-              ? Math.min(1, (serviced - 10) / 14)
+              ? Math.min(1, (serviced - 14) / 20)
               : storeTier === 3
-                ? Math.min(1, (serviced - 24) / 18)
+                ? Math.min(1, (serviced - 34) / 30)
                 : 1;
 
         this.ctx.save();

@@ -74,6 +74,18 @@ export class LevelProgression {
 
   // Optional terrain/road check injected by main game so procedural spawns never land on water or roads
   public canPlaceOnTile: ((x: number, y: number) => boolean) | null = null;
+  public getInventoryState:
+    | (() => {
+        bridges: number;
+        tunnels: number;
+        roundabouts: number;
+        lights: number;
+        motorways: number;
+        subways: number;
+        arterialLevel: number;
+        mapId: string;
+      })
+    | null = null;
   public trainStationConfig: {
     getRailRow: () => number;
     getStationTileX: () => number;
@@ -645,49 +657,63 @@ export class LevelProgression {
       spawnedMilestoneToday = true;
     }
 
-    // 1. Multi-Tier Store Progression (Market -> Department Galleria -> Geodesic Rotunda -> Mega-Commerce Tower)
-    if (day >= 6 && (day - 6) % 3 === 0) {
-      this.upgradeExistingStore();
+    // 1. Periodic Store Upgrades (only promotes Tier 1 -> Tier 2 or Tier 2 -> Tier 3 for older underserved stores; Tier 4 is earned by high commuter volume or manual densification)
+    if (day >= 9 && (day - 9) % 6 === 0) {
+      this.upgradeExistingStore(undefined, false, 3);
     }
 
-    // 1b. Frequent Residential Density Upgrades (House -> Apartment -> High-Rise Skyscraper)
-    if (day >= 5 && (day - 5) % 2 === 0) {
-      this.upgradeExistingHouse();
-      if (day >= 13) {
-        this.upgradeExistingHouse();
+    // 1b. Balanced Residential Pyramid Upgrades (maintains ~45% Houses, ~35% Apartments, ~20% Skyscrapers)
+    if (day >= 6 && (day - 6) % 3 === 0) {
+      const mostNeeded = this.getMostUnderservedColor();
+      if (mostNeeded && this.getColorSupplyRatio(mostNeeded) < 6.8) {
+        this.upgradeExistingHouse(mostNeeded);
       }
     }
 
-    // 2. Procedural Additional Stores on Days 13, 17, 25, 29, 33...
-    if (day === 13 || day === 17 || (day >= 25 && (day - 25) % 4 === 0)) {
+    // 2. Procedural Additional Stores on Days 12, 16, 20, 24, 28, 33, 38, 43...
+    const nonStationStores = this.destinations.filter((d) => !d.isTrainStation).length;
+    if (
+      nonStationStores < 12 &&
+      (day === 12 || day === 16 || day === 20 || (day >= 24 && (day - 24) % 4 === 0))
+    ) {
       const unlockedCount = day >= 21 ? 5 : day >= 15 ? 4 : day >= 10 ? 3 : 2;
       const availableColors = this.colorProgression.slice(0, unlockedCount);
 
       const colorCounts = new Map<BuildingColor, number>();
       for (const c of availableColors) colorCounts.set(c, 0);
       for (const d of this.destinations) {
-        colorCounts.set(d.color, (colorCounts.get(d.color) || 0) + 1);
+        if (!d.isTrainStation) {
+          colorCounts.set(d.color, (colorCounts.get(d.color) || 0) + 1);
+        }
       }
 
+      // Prioritize colors that have high car supply ratio or fewer stores
       const sortedColors = [...availableColors].sort((a, b) => {
-        const diff = (colorCounts.get(a) || 0) - (colorCounts.get(b) || 0);
-        if (diff !== 0) return diff;
-        return this.getColorSupplyRatio(b) - this.getColorSupplyRatio(a);
+        const ratioDiff = this.getColorSupplyRatio(b) - this.getColorSupplyRatio(a);
+        if (Math.abs(ratioDiff) > 1.2) return ratioDiff;
+        return (colorCounts.get(a) || 0) - (colorCounts.get(b) || 0);
       });
       const chosenColor = sortedColors[0];
 
       this.spawnProceduralDestination(chosenColor, true);
-      this.spawnProceduralHouse(chosenColor);
-      this.spawnProceduralHouse(chosenColor);
+      if (this.getColorSupplyRatio(chosenColor) < 5.2) {
+        this.spawnProceduralHouse(chosenColor);
+      }
     }
 
-    // 3. Procedural New Houses (Suburb Growth) balanced strictly toward underserved store colors!
+    // 3. Demand-Governed Residential Growth (prevents car oversupply while keeping underserved colors supported)
     if (!spawnedMilestoneToday && day >= 2) {
-      const count = day >= 8 ? 2 : 1;
+      const count = day >= 14 ? 2 : 1;
       for (let c = 0; c < count; c++) {
         const underservedColor = this.getMostUnderservedColor();
-        if (underservedColor) {
+        if (!underservedColor) break;
+        const supplyRatio = this.getColorSupplyRatio(underservedColor);
+        // Only add residential capacity if supply ratio is below 6.4 cars per weighted store
+        if (supplyRatio < 6.4) {
           this.spawnProceduralHouse(underservedColor);
+        } else if (c === 0 && day % 2 === 0) {
+          // Consolidate existing 1x1 sprawl into a cleaner pyramid without inflating car count excessively
+          this.upgradeExistingHouse(underservedColor, true);
         }
       }
     }
@@ -963,26 +989,53 @@ export class LevelProgression {
   }
 
   /**
-   * Upgrades an existing house into a Tier 2 Mid-Rise Apartment (4 cars)
-   * or Tier 2 Apartment into a Tier 3 High-Rise Skyscraper (6 cars).
-   * Optionally targets a specific color and consolidates redundant nearby Tier-1 sprawl.
+   * Upgrades an existing house into a Tier 2 Mid-Rise Apartment (3 cars)
+   * or Tier 2 Apartment into a Tier 3 High-Rise Skyscraper (5 cars) while
+   * strictly preserving a Golden Urban Skyline Pyramid (~45% T1 Houses, ~35% T2 Apartments, ~20% T3 Skyscrapers)
+   * and promoting buildings closest to the neighborhood core first!
    */
-  public upgradeExistingHouse(preferredColor?: BuildingColor, silent: boolean = false): House | null {
-    const sortByUnderserved = (a: House, b: House) =>
-      this.getColorSupplyRatio(a.color) - this.getColorSupplyRatio(b.color);
-
+  public upgradeExistingHouse(
+    preferredColor?: BuildingColor,
+    silent: boolean = false,
+    forceConsolidate: boolean = false
+  ): House | null {
     const pool = preferredColor
       ? this.houses.filter((h) => h.color === preferredColor)
       : this.houses;
+    if (pool.length === 0) return null;
 
-    const tier2Houses = pool.filter((h) => h.tier === 2).sort(sortByUnderserved);
-    const tier1Houses = pool.filter((h) => h.tier === 1).sort(sortByUnderserved);
+    // Compute centroid of pool so inner-core buildings densify into Apartments & Skyscrapers first
+    const cx = pool.reduce((s, h) => s + h.x, 0) / pool.length;
+    const cy = pool.reduce((s, h) => s + h.y, 0) / pool.length;
+
+    const sortByCoreAndNeed = (a: House, b: House) => {
+      const ratioDiff = this.getColorSupplyRatio(a.color) - this.getColorSupplyRatio(b.color);
+      if (Math.abs(ratioDiff) > 0.4) return ratioDiff;
+      return Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy);
+    };
+
+    const tier3Houses = pool.filter((h) => h.tier === 3);
+    const tier2Houses = pool.filter((h) => h.tier === 2).sort(sortByCoreAndNeed);
+    const tier1Houses = pool.filter((h) => h.tier === 1).sort(sortByCoreAndNeed);
+
+    // Golden Pyramid Rule:
+    // Promote T2 -> T3 Skyscraper only when there are at least ~1.8x as many T2 Apartments as T3 Skyscrapers
+    const canPromoteToTier3 =
+      tier2Houses.length >= 1 &&
+      (this.currentDay >= 11 || forceConsolidate) &&
+      (tier2Houses.length >= Math.ceil((tier3Houses.length + 1) * 1.6) ||
+        (forceConsolidate && tier1Houses.length === 0));
+
+    // Promote T1 -> T2 Apartment only when T1 suburban base remains healthy
+    const canPromoteToTier2 =
+      tier1Houses.length >= 1 &&
+      (forceConsolidate || tier1Houses.length >= Math.max(2, Math.floor((tier2Houses.length + tier3Houses.length) * 0.85)));
 
     let target: House | null = null;
-    if (tier2Houses.length >= 1 && (this.currentDay >= 10 || tier1Houses.length <= 2)) {
+    if (canPromoteToTier3) {
       target = tier2Houses[0];
       target.tier = 3;
-      target.totalCars = 6;
+      target.totalCars = 5;
       target.availableCars += 2;
       target.spawnAnimation = 0.22;
       this.tryMergeNearbyTier1Sprawl(target);
@@ -990,23 +1043,23 @@ export class LevelProgression {
         sound.playMotorwayPlacement();
         if (this.onToast) {
           this.onToast(
-            `🏙️ ${target.color.toUpperCase()} Apartment evolved into a High-Rise Skyscraper (6 cars)!`
+            `🏙️ ${target.color.toUpperCase()} Apartment evolved into a High-Rise Skyscraper (5 cars)!`
           );
         }
       }
       return target;
-    } else if (tier1Houses.length > 0) {
+    } else if (canPromoteToTier2) {
       target = tier1Houses[0];
       target.tier = 2;
-      target.totalCars = 4;
-      target.availableCars += 2;
+      target.totalCars = 3;
+      target.availableCars += 1;
       target.spawnAnimation = 0.22;
       this.tryMergeNearbyTier1Sprawl(target);
       if (!silent) {
         sound.playMotorwayPlacement();
         if (this.onToast) {
           this.onToast(
-            `🏢 ${target.color.toUpperCase()} House densified into a Mid-Rise Apartment (4 cars)!`
+            `🏢 ${target.color.toUpperCase()} House densified into a Mid-Rise Apartment (3 cars)!`
           );
         }
       }
@@ -1016,18 +1069,18 @@ export class LevelProgression {
   }
 
   /**
-   * When a building upgrades to Tier 2 or Tier 3 and its color already has 6+ buildings,
+   * When a building upgrades to Tier 2 or Tier 3 and its color already has 7+ buildings,
    * absorbs 1 nearby idle Tier-1 house of the same color so the map evolves from 1x1 sprawl
    * into clean, high-density Mid-Rise & Skyscraper districts!
    */
   private tryMergeNearbyTier1Sprawl(upgradedHouse: House): boolean {
     const sameColor = this.houses.filter((h) => h.color === upgradedHouse.color);
-    if (sameColor.length < 6) return false;
+    const sameColorT1 = sameColor.filter((h) => h.tier === 1);
+    if (sameColor.length < 7 || sameColorT1.length <= 3) return false;
 
-    const mergeCandidate = sameColor.find(
+    const mergeCandidate = sameColorT1.find(
       (h) =>
         h.id !== upgradedHouse.id &&
-        h.tier === 1 &&
         h.availableCars === h.totalCars &&
         Math.hypot(h.x - upgradedHouse.x, h.y - upgradedHouse.y) <= 4.5
     );
@@ -1043,7 +1096,7 @@ export class LevelProgression {
 
   /**
    * Sweeps across the city and consolidates crowded Tier-1 house clusters into
-   * Mid-Rise Apartments (Tier 2) and High-Rise Skyscrapers (Tier 3).
+   * a balanced pyramid of Mid-Rise Apartments (Tier 2) and High-Rise Skyscrapers (Tier 3).
    */
   public consolidateSprawlIntoTowers(announce: boolean = true): number {
     let upgradedCount = 0;
@@ -1051,24 +1104,26 @@ export class LevelProgression {
 
     for (const color of colors) {
       const colorHouses = this.houses.filter((h) => h.color === color);
-      if (colorHouses.length <= 3) continue;
+      const t1Count = colorHouses.filter((h) => h.tier === 1).length;
+      if (t1Count <= 3) continue;
 
-      // Upgrade up to 40% of Tier-1/Tier-2 buildings in crowded neighborhoods
-      const targetUpgrades = Math.max(1, Math.floor(colorHouses.length * 0.35));
+      // Consolidate excess Tier-1 sprawl while preserving the suburban pyramid
+      const targetUpgrades = announce
+        ? Math.max(1, Math.floor(t1Count * 0.35))
+        : Math.max(1, Math.floor((t1Count - 3) * 0.3));
       for (let i = 0; i < targetUpgrades; i++) {
-        const res = this.upgradeExistingHouse(color, true);
+        const res = this.upgradeExistingHouse(color, true, announce);
         if (res) upgradedCount++;
       }
     }
 
-    // Also advance commercial store tiers during densification sweeps
-    const upgradeableStores = this.destinations.filter(
-      (d) => !d.isTrainStation && (d.tier || (d.isCircular ? 3 : 1)) < 4
-    );
-    if (upgradeableStores.length > 0) {
-      const storeUpgrades = Math.max(1, Math.min(2, Math.ceil(upgradeableStores.length * 0.4)));
-      for (let s = 0; s < storeUpgrades; s++) {
-        if (this.upgradeExistingStore(undefined, true)) {
+    // Only advance commercial stores during manual densification button clicks (or if a store is still Tier 1 after Day 16)
+    if (announce) {
+      const upgradeableStores = this.destinations.filter(
+        (d) => !d.isTrainStation && (d.tier || (d.isCircular ? 3 : 1)) < 4
+      );
+      if (upgradeableStores.length > 0) {
+        if (this.upgradeExistingStore(undefined, true, 4)) {
           upgradedCount++;
         }
       }
@@ -1078,7 +1133,7 @@ export class LevelProgression {
       sound.playMotorwayPlacement();
       if (this.onToast) {
         this.onToast(
-          `🏙️ Urban Densification: ${upgradedCount} lots & commercial hubs upgraded into high-density towers!`
+          `🏙️ Urban Densification: ${upgradedCount} lots & hubs consolidated into Mid-Rises & Skyscrapers!`
         );
       }
     }
@@ -1089,14 +1144,27 @@ export class LevelProgression {
    * Advances a commercial store through its 4 architectural & capacity tiers:
    * Tier 1: Corner Market -> Tier 2: Department Galleria -> Tier 3: Geodesic Rotunda Hub -> Tier 4: Mega-Commerce Arcology Tower
    */
-  public upgradeExistingStore(targetDest?: Destination, silent: boolean = false): Destination | null {
+  public upgradeExistingStore(
+    targetDest?: Destination,
+    silent: boolean = false,
+    maxAllowedTier: 2 | 3 | 4 = 4
+  ): Destination | null {
     const getStoreTier = (d: Destination): 1 | 2 | 3 | 4 =>
       d.tier || (d.isCircular ? 3 : 1);
 
+    const nonStationStores = this.destinations.filter((d) => !d.isTrainStation);
+    const tier4Count = nonStationStores.filter((d) => getStoreTier(d) === 4).length;
+    const maxTier4Allowed = Math.max(1, Math.floor(nonStationStores.length * 0.38));
+
     let target = targetDest || null;
     if (!target) {
-      const candidates = this.destinations
-        .filter((d) => !d.isTrainStation && getStoreTier(d) < 4)
+      const candidates = nonStationStores
+        .filter((d) => {
+          const ct = getStoreTier(d);
+          if (ct >= maxAllowedTier) return false;
+          if (ct === 3 && tier4Count >= maxTier4Allowed) return false;
+          return true;
+        })
         .sort((a, b) => {
           const tierDiff = getStoreTier(a) - getStoreTier(b);
           if (tierDiff !== 0) return tierDiff;
@@ -1107,14 +1175,15 @@ export class LevelProgression {
     }
 
     const currentTier = getStoreTier(target);
-    if (currentTier >= 4 || target.isTrainStation) return null;
+    if (currentTier >= maxAllowedTier || target.isTrainStation) return null;
+    if (currentTier === 3 && tier4Count >= maxTier4Allowed && !targetDest) return null;
 
     const nextTier = (currentTier + 1) as 2 | 3 | 4;
     target.tier = nextTier;
     target.isCircular = nextTier === 3;
     target.spawnAnimation = 0.25; // trigger spring pop animation
     target.maxPins = CONFIG.GAMEPLAY.MAX_PINS_PER_DESTINATION + (nextTier - 1);
-    target.spawnInterval = Math.max(1.9, target.spawnInterval * 0.86);
+    target.spawnInterval = Math.max(2.05, target.spawnInterval * 0.9);
 
     if (!silent) {
       sound.playMotorwayPlacement();
@@ -1301,14 +1370,14 @@ export class LevelProgression {
     const upgradableSameColor = sameColorHouses.filter((h) => (h.tier || 1) < 3);
 
     // Smart Vertical Densification:
-    // If this color already has 4+ houses (or the city has 18+ houses total), strongly favor
-    // upgrading existing houses into Tier 2 Apartments & Tier 3 High-Rises instead of carpeting the map with 1x1 sprawl!
+    // Once a color has 4+ houses (or the city has 18+ houses total), convert a balanced share
+    // of new spawns into vertical upgrades while preserving the ~45% T1 / ~35% T2 / ~20% T3 pyramid!
     if (upgradableSameColor.length > 0) {
       const densityChance =
-        sameColorHouses.length >= 7 || this.houses.length >= 28
-          ? 0.92
-          : sameColorHouses.length >= 4 || this.houses.length >= 16
-          ? 0.68
+        sameColorHouses.length >= 8 || this.houses.length >= 30
+          ? 0.78
+          : sameColorHouses.length >= 5 || this.houses.length >= 18
+          ? 0.52
           : 0;
       if (Math.random() < densityChance) {
         const upgraded = this.upgradeExistingHouse(color, false);
@@ -1531,16 +1600,39 @@ export class LevelProgression {
       },
     ];
 
-    // Pick 3 distinct upgrade cards so players have rich strategic agency every Sunday
-    const pool = [...allBundles];
+    // Pick 3 distinct, context-aware upgrade cards so players never get RNG-locked by rivers or mountains:
+    // Slot 1: Heavy Rapid Transit (Motorway Flyover or Subway Metro)
+    // Slot 2: Flow & Arterial Engineering (Arterial Boost Expansion or Roundabout + Smart Lights)
+    // Slot 3: Terrain & Expansion Relief (Prioritizes Bridges or Tunnels when inventory is low!)
+    const inv = this.getInventoryState ? this.getInventoryState() : null;
     const picked: UpgradeOption[] = [];
-    // Ensure a high-impact transit option (Motorway or Subway) is always in the pool
-    const primaryIdx = (week + Math.floor(Math.random() * 2)) % 2;
-    picked.push(pool.splice(primaryIdx, 1)[0]);
 
-    while (picked.length < 3 && pool.length > 0) {
-      const rIdx = Math.floor(Math.random() * pool.length);
-      picked.push(pool.splice(rIdx, 1)[0]);
+    // Slot 1: Heavy Rapid Transit
+    const transitOptions = [allBundles[0], allBundles[1]]; // Subway vs Motorway
+    if (inv && inv.motorways === 0 && inv.subways > 0) {
+      picked.push(allBundles[1]);
+    } else if (inv && inv.subways === 0 && inv.motorways > 0) {
+      picked.push(allBundles[0]);
+    } else {
+      picked.push(transitOptions[(week + Math.floor(Math.random() * 2)) % 2]);
+    }
+
+    // Slot 2: Flow & Arterial Engineering
+    const flowOptions = [allBundles[3], allBundles[5]]; // Roundabout vs Arterial Boost
+    if (inv && inv.roundabouts === 0 && week % 2 === 1) {
+      picked.push(allBundles[3]);
+    } else {
+      picked.push(flowOptions[(week + Math.floor(Math.random() * 2)) % 2]);
+    }
+
+    // Slot 3: Terrain & Bottleneck Relief
+    if (inv && inv.mapId === 'alpine_pass' && inv.tunnels <= 1) {
+      picked.push(allBundles[4]); // 2 Mountain Tunnels & 1 Bridge
+    } else if (inv && inv.bridges <= 1) {
+      picked.push(allBundles[2]); // 2 River Bridges & 2 Smart Lights
+    } else {
+      const remaining = allBundles.filter((b) => !picked.some((p) => p.id === b.id));
+      picked.push(remaining[Math.floor(Math.random() * remaining.length)]);
     }
 
     if (this.onUpgradeModal) {
