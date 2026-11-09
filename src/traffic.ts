@@ -875,9 +875,16 @@ export class TrafficSimulation {
     // Detect if this segment is an elevated Motorway span
     car.onMotorway = Boolean(targetPoint.isMotorway || prevPoint.isMotorway);
 
+    const currTileX = Math.floor(car.x);
+    const currTileY = Math.floor(car.y);
+    const currRoad = this.roadNetwork.getRoad(currTileX, currTileY);
+    const arterialBoost = car.onMotorway
+      ? 1.0
+      : this.roadNetwork.getArterialSpeedMultiplier(currRoad);
+
     const baseSpeed = car.onMotorway
       ? CONFIG.GAMEPLAY.BASE_CAR_SPEED * CONFIG.GAMEPLAY.MOTORWAY_SPEED_MULTIPLIER
-      : CONFIG.GAMEPLAY.BASE_CAR_SPEED;
+      : CONFIG.GAMEPLAY.BASE_CAR_SPEED * arterialBoost;
 
     let desiredSpeed = baseSpeed;
     car.isBraking = false;
@@ -889,15 +896,12 @@ export class TrafficSimulation {
       // 1. Check Traffic Lights, Railroad Crossings & Uncontrolled Intersection Caution ahead
       const aheadTileX = Math.floor(car.x + cosHeading * 0.45);
       const aheadTileY = Math.floor(car.y + sinHeading * 0.45);
-      const currTileX = Math.floor(car.x);
-      const currTileY = Math.floor(car.y);
-      const currRoad = this.roadNetwork.getRoad(currTileX, currTileY);
       const aheadRoad = this.roadNetwork.getRoad(aheadTileX, aheadTileY);
       const onRoundabout = Boolean(
         (currRoad && currRoad.isRoundabout) || (aheadRoad && aheadRoad.isRoundabout)
       );
 
-      // Slow down slightly through uncontrolled 3-way/4-way intersections (Roundabouts stay fast!)
+      // Slow down slightly through uncontrolled 3-way/4-way intersections (Roundabouts & Tier 2+ Arterials stay fast!)
       const currConnCount = currRoad
         ? Object.values(currRoad.connections).filter(Boolean).length
         : 0;
@@ -908,7 +912,8 @@ export class TrafficSimulation {
         !onRoundabout &&
         ((currRoad && currConnCount >= 3) || (aheadRoad && aheadConnCount >= 3));
       if (isIntersection) {
-        desiredSpeed = Math.min(desiredSpeed, baseSpeed * 0.68);
+        const intersectFactor = this.roadNetwork.arterialLevel >= 2 ? 0.84 : 0.68;
+        desiredSpeed = Math.min(desiredSpeed, baseSpeed * intersectFactor);
       }
 
       // Also slow down when making sharp corner turns (unless circulating on a Roundabout)

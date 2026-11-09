@@ -305,6 +305,7 @@ class MiniMotorwaysGame {
     document.getElementById('btn-solar')?.addEventListener('click', () => this.cycleSolarLighting());
     document.getElementById('btn-weather')?.addEventListener('click', () => this.cycleSeasonWeather());
     document.getElementById('btn-art-style')?.addEventListener('click', () => this.cycleArtStyle());
+    document.getElementById('btn-arterial')?.addEventListener('click', () => this.upgradeArterialBoost(false));
     document.getElementById('btn-menu')!.addEventListener('click', () => this.openPauseMenu());
     document.getElementById('btn-resume')!.addEventListener('click', () => this.closePauseMenu());
     document.getElementById('btn-recenter')!.addEventListener('click', () => {
@@ -398,6 +399,8 @@ class MiniMotorwaysGame {
         this.cycleSeasonWeather();
       } else if (e.key === 'v' || e.key === 'V') {
         this.cycleArtStyle();
+      } else if (e.key === 'a' || e.key === 'A') {
+        this.upgradeArterialBoost(false);
       } else if (e.key === 'm' || e.key === 'M') {
         this.toggleSound();
       } else if (e.key === '=' || e.key === '+') {
@@ -648,6 +651,33 @@ class MiniMotorwaysGame {
       modern: '🏢 Architectural Style: Modern Glass & Cantilever',
     };
     this.showToast(labels[next]);
+    this.updateHUD();
+  }
+
+  private upgradeArterialBoost(fromWeeklyBundle: boolean) {
+    if (!fromWeeklyBundle) {
+      const roadCost = 15;
+      if (this.roadNetwork.arterialLevel >= 3) {
+        this.showToast('⚡ Smart Super-Arterial is already at Maximum Tier (Lv.3 — +50% Speed)!');
+        return;
+      }
+      if (this.roadNetwork.roadsRemaining < roadCost) {
+        this.showToast(`⚠️ Need ${roadCost} spare Road Tiles to upgrade Arterial Highway Tier (or pick it in Weekly Upgrades)!`);
+        return;
+      }
+      this.roadNetwork.roadsRemaining -= roadCost;
+    }
+
+    this.roadNetwork.arterialLevel = Math.min(4, this.roadNetwork.arterialLevel + 1);
+    const lvl = this.roadNetwork.arterialLevel;
+    sound.triggerHaptic('medium');
+    if (lvl === 1) {
+      this.showToast('🛣️ Arterial Highway Lv.1: +20% Corridor Speed & Twin Amber Center Stripes!');
+    } else if (lvl === 2) {
+      this.showToast('⚡ Express Boulevard Lv.2: +35% Speed, Priority Intersections & Cat’s-Eye LED Studs!');
+    } else {
+      this.showToast(`🚀 Smart Super-Arterial Lv.${lvl}: +50% Speed, Boulevard Streetlamps & Slipstream Wake!`);
+    }
     this.updateHUD();
   }
 
@@ -1105,6 +1135,17 @@ class MiniMotorwaysGame {
       styleLabelEl.innerText = st === 'clay' ? 'Clay' : st === 'modern' ? 'Modern' : 'Diorama';
     }
 
+    const artIconEl = document.getElementById('arterial-icon');
+    const artLabelEl = document.getElementById('arterial-label');
+    const artBtnEl = document.getElementById('btn-arterial');
+    if (artIconEl && artLabelEl && artBtnEl) {
+      const lvl = this.roadNetwork.arterialLevel;
+      artIconEl.innerText = lvl >= 3 ? '🚀' : lvl >= 1 ? '⚡' : '🛣️';
+      const boostPct = lvl === 0 ? 0 : 5 + Math.min(4, lvl) * 15;
+      artLabelEl.innerText = lvl > 0 ? `Arterial Lv.${lvl} (+${boostPct}%)` : 'Boost Roads (15)';
+      artBtnEl.classList.toggle('active', lvl > 0);
+    }
+
     const isSymphony = this.level.gameMode === 'symphony';
     this.calendarPill.classList.toggle('hidden', isSymphony);
     this.zenPill.classList.toggle('hidden', this.level.gameMode !== 'zen');
@@ -1230,6 +1271,7 @@ class MiniMotorwaysGame {
           this.roadNetwork.trafficLightsRemaining += 2;
         } else if (opt.id === 'bundle_arterial_expansion') {
           this.roadNetwork.bridgesRemaining += 1;
+          this.upgradeArterialBoost(true);
         }
         this.upgradeModal.classList.add('hidden');
         this.level.completeUpgrade();

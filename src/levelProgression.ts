@@ -1394,7 +1394,7 @@ export class LevelProgression {
       {
         id: 'bundle_arterial_expansion',
         title: 'Arterial Highway Expansion',
-        subtitle: `+ ${45 + extraRoads} Road Tiles & 1 Bridge`,
+        subtitle: `+ ${45 + extraRoads} Roads, 1 Bridge & +1 Arterial Speed Boost Tier!`,
         iconType: 'roads',
         roadsAmount: 45 + extraRoads,
         specialAmount: 1,

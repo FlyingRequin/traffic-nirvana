@@ -44,6 +44,24 @@ export class RoadNetwork {
   public subwaysRemaining: number = CONFIG.GAMEPLAY.INITIAL_SUBWAYS;
   public roundaboutsRemaining: number = CONFIG.GAMEPLAY.INITIAL_ROUNDABOUTS;
   public trafficLightsRemaining: number = CONFIG.GAMEPLAY.INITIAL_TRAFFIC_LIGHTS;
+  /** Progressive Arterial Highway upgrade tier (0 = standard roads, 1..3+ = boosted arterial boulevards) */
+  public arterialLevel: number = 0;
+
+  public isArterialTile(road: RoadTile | undefined): boolean {
+    if (!road || this.arterialLevel <= 0 || road.isRoundabout) return false;
+    const connCount = Object.values(road.connections).filter(Boolean).length;
+    return connCount >= 2 || Boolean(road.isBridge);
+  }
+
+  public getArterialSpeedMultiplier(road: RoadTile | undefined): number {
+    if (this.arterialLevel <= 0 || !road) return 1.0;
+    const lvl = Math.min(4, this.arterialLevel);
+    if (this.isArterialTile(road)) {
+      // Tier 1: +20%, Tier 2: +35%, Tier 3: +50%, Tier 4: +65%
+      return 1.05 + lvl * 0.15;
+    }
+    return 1.0 + lvl * 0.06;
+  }
 
   public riverPoints: WorldPoint[] = [];
   public riverChannels: WorldPoint[][] = [];

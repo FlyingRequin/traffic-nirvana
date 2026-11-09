@@ -1039,12 +1039,18 @@ export class GameRenderer {
 
     for (const road of this.roadNetwork.roads.values()) {
       if (road.isRoundabout) continue;
+      if (this.roadNetwork.isArterialTile(road)) continue;
       const cx = (road.x + 0.5) * tileSize;
       const cy = (road.y + 0.5) * tileSize;
       this.drawTileRoadGeometry(road, cx, cy, tileSize, buildingDirsMap, true);
       this.ctx.stroke();
     }
     this.ctx.restore();
+
+    // 5b. Progressive Arterial Highway Upgrade Graphics (Tier 1 -> Tier 2 -> Tier 3+)
+    if (this.roadNetwork.arterialLevel > 0) {
+      this.renderArterialCorridors(tileSize, roadWidth, buildingDirsMap);
+    }
 
     // Render Roundabout central grass islands
     for (const rb of this.roadNetwork.roundabouts) {
@@ -1174,6 +1180,128 @@ export class GameRenderer {
         this.ctx.restore();
       }
     }
+  }
+
+  /**
+   * Renders progressively richer Arterial Highway markings as arterialLevel increases:
+   * - Tier 1 (+20% Speed): Crisp white outer edge fog lines + Twin Amber-Gold Center Divider Stripes
+   * - Tier 2 (+35% Speed): Glowing Cat's-Eye LED Road Studs + Animated Scrolling Speed Flow Dashes
+   * - Tier 3+ (+50% Speed): Synchronized Boulevard Streetlamps with warm golden night halos + High-Speed Express Glow
+   */
+  private renderArterialCorridors(
+    tileSize: number,
+    roadWidth: number,
+    buildingDirsMap: Map<string, { dx: number; dy: number }[]>
+  ) {
+    const lvl = this.roadNetwork.arterialLevel;
+    const theme = this.getTheme();
+    const isNightOrDusk = this.env.solar.nightFactor > 0.25;
+
+    this.ctx.save();
+    this.ctx.lineCap = 'round';
+    this.ctx.lineJoin = 'round';
+
+    // 1. Tier 1+: Crisp outer edge shoulder stripes + Twin Amber-Gold Center Divider
+    for (const road of this.roadNetwork.roads.values()) {
+      if (!this.roadNetwork.isArterialTile(road) || road.isTunnel) continue;
+      if (this.isInternalRoundaboutCorner(road, buildingDirsMap)) continue;
+      const cx = (road.x + 0.5) * tileSize;
+      const cy = (road.y + 0.5) * tileSize;
+
+      // Subtle outer white highway fog-line shoulders
+      this.ctx.strokeStyle = isNightOrDusk
+        ? 'rgba(248, 250, 252, 0.28)'
+        : 'rgba(255, 255, 255, 0.42)';
+      this.ctx.lineWidth = roadWidth - 2.5;
+      this.ctx.setLineDash([]);
+      this.drawTileRoadGeometry(road, cx, cy, tileSize, buildingDirsMap, false);
+      this.ctx.stroke();
+
+      // Re-fill inner express asphalt lane bed so outer stroke forms two crisp shoulder lines
+      this.ctx.strokeStyle = road.isBridge ? CONFIG.COLORS.BRIDGE_DECK : theme.ROAD_ASPHALT;
+      this.ctx.lineWidth = roadWidth - 5.2;
+      this.drawTileRoadGeometry(road, cx, cy, tileSize, buildingDirsMap, false);
+      this.ctx.stroke();
+
+      // Amber-Gold Double Center Divider (drawn as outer amber band + thin asphalt core)
+      this.ctx.strokeStyle = lvl >= 3 ? '#38BDF8' : '#F59E0B';
+      this.ctx.lineWidth = 3.6;
+      this.drawTileRoadGeometry(road, cx, cy, tileSize, buildingDirsMap, true);
+      this.ctx.stroke();
+
+      this.ctx.strokeStyle = road.isBridge ? CONFIG.COLORS.BRIDGE_DECK : theme.ROAD_ASPHALT;
+      this.ctx.lineWidth = 1.2;
+      this.drawTileRoadGeometry(road, cx, cy, tileSize, buildingDirsMap, true);
+      this.ctx.stroke();
+    }
+
+    // 2. Tier 2+: Animated Scrolling Express Chevrons / Flow Pulses & Cat's-Eye LED Road Studs
+    if (lvl >= 2) {
+      this.ctx.save();
+      this.ctx.strokeStyle =
+        lvl >= 3 ? 'rgba(56, 189, 248, 0.75)' : 'rgba(253, 224, 71, 0.72)';
+      this.ctx.lineWidth = 2.0;
+      this.ctx.setLineDash([3, 13]);
+      this.ctx.lineDashOffset = -(this.animTime * (22 + lvl * 8));
+
+      for (const road of this.roadNetwork.roads.values()) {
+        if (!this.roadNetwork.isArterialTile(road) || road.isTunnel) continue;
+        if (this.isInternalRoundaboutCorner(road, buildingDirsMap)) continue;
+        const cx = (road.x + 0.5) * tileSize;
+        const cy = (road.y + 0.5) * tileSize;
+        this.drawTileRoadGeometry(road, cx, cy, tileSize, buildingDirsMap, true);
+        this.ctx.stroke();
+
+        // Glowing Cat's-Eye center reflector stud
+        const studPulse = 0.65 + 0.35 * Math.sin(this.animTime * 5 + road.x * 0.9 + road.y * 1.3);
+        this.ctx.fillStyle =
+          lvl >= 3
+            ? `rgba(125, 211, 252, ${studPulse.toFixed(2)})`
+            : `rgba(254, 240, 138, ${studPulse.toFixed(2)})`;
+        this.ctx.beginPath();
+        this.ctx.arc(cx, cy, 1.7, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+      this.ctx.restore();
+    }
+
+    // 3. Tier 3+: Synchronized Boulevard Streetlamps with Warm Dusk/Night Illumination Pools
+    if (lvl >= 3) {
+      for (const road of this.roadNetwork.roads.values()) {
+        if (!this.roadNetwork.isArterialTile(road) || road.isTunnel) continue;
+        // Space streetlamps every 2 tiles so boulevards look clean and architectural
+        if ((road.x + road.y) % 2 !== 0) continue;
+        const cx = (road.x + 0.5) * tileSize;
+        const cy = (road.y + 0.5) * tileSize;
+        const lampX = cx - roadWidth * 0.54;
+        const lampY = cy - roadWidth * 0.54;
+
+        // Warm golden ground light pool at Dusk & Night
+        if (this.env.solar.nightFactor > 0.2) {
+          const haloAlpha = Math.min(0.32, this.env.solar.nightFactor * 0.34);
+          const grad = this.ctx.createRadialGradient(cx, cy, 2, cx, cy, tileSize * 0.68);
+          grad.addColorStop(0, `rgba(253, 224, 71, ${haloAlpha.toFixed(3)})`);
+          grad.addColorStop(1, 'rgba(253, 224, 71, 0)');
+          this.ctx.fillStyle = grad;
+          this.ctx.beginPath();
+          this.ctx.arc(cx, cy, tileSize * 0.68, 0, Math.PI * 2);
+          this.ctx.fill();
+        }
+
+        // Lamp post & luminaire head
+        this.ctx.fillStyle = '#334155';
+        this.ctx.beginPath();
+        this.ctx.arc(lampX, lampY, 2.2, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        this.ctx.fillStyle = this.env.solar.nightFactor > 0.2 ? '#FEF08A' : '#E2E8F0';
+        this.ctx.beginPath();
+        this.ctx.arc(lampX + 1.2, lampY + 1.2, 1.5, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+    }
+
+    this.ctx.restore();
   }
 
   /**
@@ -2443,6 +2571,35 @@ export class GameRenderer {
         car.isBraking,
         showBeams
       );
+
+      // Tier 2+ Arterial Slipstream Wake Trails behind fast-cruising cars
+      if (!motorwayPass && this.roadNetwork.arterialLevel >= 2 && car.speed > CONFIG.GAMEPLAY.BASE_CAR_SPEED * 1.1 && !car.isBraking) {
+        const currRoad = this.roadNetwork.getRoad(Math.floor(car.x), Math.floor(car.y));
+        if (this.roadNetwork.isArterialTile(currRoad)) {
+          const wakeLen = 10 + Math.min(3, this.roadNetwork.arterialLevel) * 4;
+          const tailX = px - Math.cos(car.angle) * 9;
+          const tailY = py - Math.sin(car.angle) * 9;
+          const endX = tailX - Math.cos(car.angle) * wakeLen;
+          const endY = tailY - Math.sin(car.angle) * wakeLen;
+          this.ctx.save();
+          const grad = this.ctx.createLinearGradient(endX, endY, tailX, tailY);
+          grad.addColorStop(0, 'rgba(245, 158, 11, 0)');
+          grad.addColorStop(
+            1,
+            this.roadNetwork.arterialLevel >= 3
+              ? 'rgba(56, 189, 248, 0.52)'
+              : 'rgba(251, 191, 36, 0.42)'
+          );
+          this.ctx.strokeStyle = grad;
+          this.ctx.lineWidth = 2.4;
+          this.ctx.lineCap = 'round';
+          this.ctx.beginPath();
+          this.ctx.moveTo(tailX, tailY);
+          this.ctx.lineTo(endX, endY);
+          this.ctx.stroke();
+          this.ctx.restore();
+        }
+      }
     }
   }
 
