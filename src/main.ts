@@ -306,6 +306,7 @@ class MiniMotorwaysGame {
     document.getElementById('btn-weather')?.addEventListener('click', () => this.cycleSeasonWeather());
     document.getElementById('btn-art-style')?.addEventListener('click', () => this.cycleArtStyle());
     document.getElementById('btn-arterial')?.addEventListener('click', () => this.upgradeArterialBoost(false));
+    document.getElementById('btn-densify')?.addEventListener('click', () => this.triggerManualDensification());
     document.getElementById('btn-menu')!.addEventListener('click', () => this.openPauseMenu());
     document.getElementById('btn-resume')!.addEventListener('click', () => this.closePauseMenu());
     document.getElementById('btn-recenter')!.addEventListener('click', () => {
@@ -401,6 +402,8 @@ class MiniMotorwaysGame {
         this.cycleArtStyle();
       } else if (e.key === 'a' || e.key === 'A') {
         this.upgradeArterialBoost(false);
+      } else if (e.key === 'u' || e.key === 'U') {
+        this.triggerManualDensification();
       } else if (e.key === 'm' || e.key === 'M') {
         this.toggleSound();
       } else if (e.key === '=' || e.key === '+') {
@@ -677,6 +680,19 @@ class MiniMotorwaysGame {
       this.showToast('⚡ Express Boulevard Lv.2: +35% Speed, Priority Intersections & Cat’s-Eye LED Studs!');
     } else {
       this.showToast(`🚀 Smart Super-Arterial Lv.${lvl}: +50% Speed, Boulevard Streetlamps & Slipstream Wake!`);
+    }
+    this.updateHUD();
+  }
+
+  private triggerManualDensification() {
+    sound.triggerHaptic('medium');
+    const count = this.level.consolidateSprawlIntoTowers(true);
+    if (count === 0) {
+      const u1 = this.level.upgradeExistingHouse(undefined, false);
+      const u2 = this.level.upgradeExistingHouse(undefined, true);
+      if (!u1 && !u2) {
+        this.showToast('🏙️ All current residential buildings are already at maximum Skyscraper density!');
+      }
     }
     this.updateHUD();
   }

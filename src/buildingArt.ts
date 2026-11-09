@@ -269,47 +269,57 @@ function dioramaHouse(ctx: CanvasRenderingContext2D, p: ArtPalette, night: boole
 
 function dioramaApartment(ctx: CanvasRenderingContext2D, p: ArtPalette, night: boolean, seed: number) {
   const win = windowColors(night);
-  const x = -12, y = -10, w = 24, d = 20, floors = 3, fh = 6.2, h = floors * fh;
-  const facade = mix(p.main, '#FFFFFF', 0.7);
-  const facadeSide = mix(p.main, '#7D8794', 0.55);
+  const x = -13, y = -10.5, w = 26, d = 21, floors = 4, fh = 6.0, h = floors * fh;
+  const facade = night ? mix(p.main, '#E2E8F0', 0.62) : mix(p.main, '#FFFFFF', 0.65);
+  const facadeSide = night ? mix(p.main, '#475569', 0.55) : mix(p.main, '#7D8794', 0.5);
 
-  groundShadow(ctx, x, y, w, d, h, 'rgba(25, 25, 35, 0.24)');
-  box(ctx, x, y, w, d, 0, h, { top: p.roofDark, south: facade, east: facadeSide });
+  groundShadow(ctx, x, y, w, d, h, 'rgba(15, 20, 32, 0.34)');
+  box(ctx, x, y, w, d, 0, h, {
+    top: p.roofLight,
+    south: facade,
+    east: facadeSide,
+    edge: night ? 'rgba(255, 255, 255, 0.14)' : 'rgba(15, 23, 42, 0.22)',
+  });
 
-  // Floor slabs (colored bands) + windows
+  // Floor slabs (bold color-coded bands) + glowing windows
   for (let f = 0; f < floors; f++) {
     const z = f * fh;
-    poly(ctx, [[x, y + d + 0.05, z + fh - 0.9], [x + w, y + d + 0.05, z + fh - 0.9], [x + w, y + d + 0.05, z + fh], [x, y + d + 0.05, z + fh]], p.main);
-    poly(ctx, [[x + w + 0.05, y, z + fh - 0.9], [x + w + 0.05, y + d, z + fh - 0.9], [x + w + 0.05, y + d, z + fh], [x + w + 0.05, y, z + fh]], p.roofDark);
+    poly(ctx, [[x, y + d + 0.05, z + fh - 1.1], [x + w, y + d + 0.05, z + fh - 1.1], [x + w, y + d + 0.05, z + fh], [x, y + d + 0.05, z + fh]], p.main);
+    poly(ctx, [[x + w + 0.05, y, z + fh - 1.1], [x + w + 0.05, y + d, z + fh - 1.1], [x + w + 0.05, y + d, z + fh], [x + w + 0.05, y, z + fh]], p.roofDark);
     for (let i = 0; i < 4; i++) {
-      const lit = !night || hashRand(seed, f * 10 + i) > 0.35;
-      southWindow(ctx, y + d, x + 2 + i * 5.6, z + 1.2, 3.6, 3.4, lit ? win.lit : win.dark);
+      const lit = !night || hashRand(seed, f * 10 + i) > 0.25;
+      southWindow(ctx, y + d, x + 2 + i * 6.0, z + 1.1, 3.8, 3.4, lit ? win.lit : win.dark);
     }
     for (let i = 0; i < 3; i++) {
-      const lit = !night || hashRand(seed, 50 + f * 10 + i) > 0.4;
-      eastWindow(ctx, x + w, y + 2.5 + i * 5.8, z + 1.2, 3.6, 3.4, lit ? win.litDim : win.dark);
+      const lit = !night || hashRand(seed, 50 + f * 10 + i) > 0.32;
+      eastWindow(ctx, x + w, y + 2.5 + i * 5.8, z + 1.1, 3.6, 3.4, lit ? win.litDim : win.dark);
     }
   }
-  // Ground-floor entrance canopy
-  box(ctx, -4, y + d, 8, 2.4, 4.2, 0.9, { top: p.main, south: p.roofDark, east: p.wall });
+  // Illuminated ground-floor entrance canopy
+  box(ctx, -5, y + d, 10, 2.8, 4.2, 1.1, { top: p.roofLight, south: p.main, east: p.wall });
 
   // Balconies on upper floors
   for (let f = 1; f < floors; f++) {
-    for (const bx of [x + 1.4, x + 12.6]) {
-      box(ctx, bx, y + d, 8.8, 1.8, f * fh, 1.6, { top: mix(p.main, '#FFFFFF', 0.25), south: p.main, east: p.roofDark });
+    for (const bx of [x + 1.4, x + 13.6]) {
+      box(ctx, bx, y + d, 9.2, 2.0, f * fh, 1.7, { top: mix(p.roofLight, '#FFFFFF', 0.35), south: p.main, east: p.roofDark });
     }
   }
 
-  // Parapet + roof deck
+  // Glowing Brand-Colored Parapet Crown + Roof Deck
   const z1 = h;
-  poly(ctx, [[x + 1.2, y + 1.2, z1 + 0.01], [x + w - 1.2, y + 1.2, z1 + 0.01], [x + w - 1.2, y + d - 1.2, z1 + 0.01], [x + 1.2, y + d - 1.2, z1 + 0.01]], mix(p.roofDark, '#2B2F38', 0.35));
-  // Rooftop props: stair core, AC units, water tank
-  box(ctx, x + 3, y + 3, 7, 6, z1, 3.4, { top: facade, south: facadeSide, east: mix(facadeSide, '#000000', 0.15) });
-  box(ctx, x + 14, y + 4, 3.2, 3.2, z1, 1.8, { top: '#E3E7EC', south: '#AEB6C0', east: '#959EAA' });
-  box(ctx, x + 18.4, y + 4, 3.2, 3.2, z1, 1.8, { top: '#E3E7EC', south: '#AEB6C0', east: '#959EAA' });
+  box(ctx, x - 0.4, y - 0.4, w + 0.8, d + 0.8, z1, 1.4, {
+    top: p.roofLight,
+    south: p.main,
+    east: p.roofDark,
+  });
+  poly(ctx, [[x + 1.4, y + 1.4, z1 + 1.45], [x + w - 1.4, y + 1.4, z1 + 1.45], [x + w - 1.4, y + d - 1.4, z1 + 1.45], [x + 1.4, y + d - 1.4, z1 + 1.45]], mix(p.roofDark, '#1E293B', 0.4));
+  // Rooftop props: brightly accented stair core, AC units, water tank
+  box(ctx, x + 3, y + 3, 7.5, 6.5, z1 + 1.4, 3.8, { top: p.roofLight, south: p.main, east: p.roofDark });
+  box(ctx, x + 14, y + 4, 3.4, 3.4, z1 + 1.4, 2.0, { top: '#F8FAFC', south: '#CBD5E1', east: '#94A3B8' });
+  box(ctx, x + 18.6, y + 4, 3.4, 3.4, z1 + 1.4, 2.0, { top: '#F8FAFC', south: '#CBD5E1', east: '#94A3B8' });
   // Water tank (cylinder)
-  const [tx, ty] = proj([x + 17, y + 13.5, z1]);
-  const [ttx, tty] = proj([x + 17, y + 13.5, z1 + 5]);
+  const [tx, ty] = proj([x + 17.5, y + 14, z1 + 1.4]);
+  const [ttx, tty] = proj([x + 17.5, y + 14, z1 + 6.4]);
   ctx.fillStyle = '#8A6A52';
   ctx.fillRect(tx - 3, tty, 6, ty - tty);
   ctx.fillStyle = '#A9836A';
@@ -320,72 +330,92 @@ function dioramaApartment(ctx: CanvasRenderingContext2D, p: ArtPalette, night: b
 
 function dioramaHighRise(ctx: CanvasRenderingContext2D, p: ArtPalette, night: boolean, seed: number, t: number) {
   const win = windowColors(night);
-  // Podium
-  const px = -13, py = -11, pw = 26, pd = 22, ph = 5;
-  // Tower
-  const tx = -8.5, ty = -8, tw = 17, td = 14, th = 27;
+  // Wide Illuminated Plaza Podium
+  const px = -14.5, py = -12, pw = 29, pd = 24, ph = 6;
+  // Soaring 3D Skyscraper Tower (taller & bolder!)
+  const tx = -9.5, ty = -9, tw = 19, td = 16, th = 36;
 
-  groundShadow(ctx, tx, ty, tw, td, th + ph, 'rgba(20, 22, 35, 0.26)');
-  groundShadow(ctx, px, py, pw, pd, ph, 'rgba(20, 22, 35, 0.18)');
+  groundShadow(ctx, tx, ty, tw, td, th + ph, 'rgba(10, 14, 26, 0.38)');
+  groundShadow(ctx, px, py, pw, pd, ph, 'rgba(10, 14, 26, 0.24)');
 
-  box(ctx, px, py, pw, pd, 0, ph, { top: mix(p.main, '#FFFFFF', 0.55), south: p.roofDark, east: p.wall });
+  box(ctx, px, py, pw, pd, 0, ph, {
+    top: mix(p.roofLight, '#FFFFFF', 0.45),
+    south: p.main,
+    east: p.roofDark,
+    edge: 'rgba(255, 255, 255, 0.22)',
+  });
   // Podium storefront glazing
-  southWindow(ctx, py + pd, px + 2, 0.8, pw - 4, 2.8, night ? '#FFE9A8' : 'rgba(200, 225, 245, 0.9)');
+  southWindow(ctx, py + pd, px + 2, 0.8, pw - 4, 3.6, night ? '#FFF3B0' : 'rgba(210, 235, 255, 0.95)');
 
-  // Glass curtain wall gradients
+  // Glass curtain wall gradients tinted with rich brand color so towers POP at day & night
   const [gsx0, gsy0] = proj([tx, ty + td, ph]);
   const [, gsy1] = proj([tx, ty + td, ph + th]);
   const southGrad = ctx.createLinearGradient(gsx0, gsy0, gsx0, gsy1);
-  southGrad.addColorStop(0, night ? '#1D2A44' : mix(p.main, '#1E3A5F', 0.55));
-  southGrad.addColorStop(1, night ? '#2E3F63' : mix(p.main, '#BFE0FF', 0.45));
+  southGrad.addColorStop(0, night ? mix(p.wall, '#1E293B', 0.45) : mix(p.main, '#1E3A5F', 0.45));
+  southGrad.addColorStop(1, night ? mix(p.main, '#334155', 0.35) : mix(p.roofLight, '#E0F2FE', 0.4));
   const eastGrad = ctx.createLinearGradient(gsx0, gsy0, gsx0, gsy1);
-  eastGrad.addColorStop(0, night ? '#141C30' : mix(p.wall, '#13243D', 0.5));
-  eastGrad.addColorStop(1, night ? '#1F2B47' : mix(p.wall, '#7FA6CC', 0.4));
+  eastGrad.addColorStop(0, night ? mix(p.wall, '#0F172A', 0.55) : mix(p.wall, '#13243D', 0.45));
+  eastGrad.addColorStop(1, night ? mix(p.roofDark, '#1E293B', 0.45) : mix(p.wall, '#7FA6CC', 0.38));
 
-  box(ctx, tx, ty, tw, td, ph, th, { top: p.roofLight, south: southGrad, east: eastGrad });
+  box(ctx, tx, ty, tw, td, ph, th, {
+    top: p.roofLight,
+    south: southGrad,
+    east: eastGrad,
+    edge: night ? rgba(p.roofLight, 0.45) : 'rgba(15, 23, 42, 0.25)',
+  });
 
-  // Vertical colored mullion fins + floor bands
-  const floors = 8;
+  // Vertical colored mullion fins + glowing floor bands
+  const floors = 9;
   const fh = th / floors;
   for (let f = 0; f < floors; f++) {
     const z = ph + f * fh;
     for (let i = 0; i < 5; i++) {
-      const lit = night ? hashRand(seed, f * 7 + i) > 0.45 : hashRand(seed, f * 7 + i) > 0.82;
-      if (lit) southWindow(ctx, ty + td, tx + 0.8 + i * 3.25, z + 0.7, 2.6, fh - 1.4, night ? win.lit : 'rgba(255,255,255,0.55)');
+      const lit = night ? hashRand(seed, f * 7 + i) > 0.28 : hashRand(seed, f * 7 + i) > 0.72;
+      if (lit) southWindow(ctx, ty + td, tx + 0.9 + i * 3.6, z + 0.65, 2.8, fh - 1.3, night ? win.lit : 'rgba(255,255,255,0.65)');
     }
     for (let i = 0; i < 4; i++) {
-      const lit = night ? hashRand(seed, 99 + f * 7 + i) > 0.5 : false;
-      if (lit) eastWindow(ctx, tx + tw, ty + 0.8 + i * 3.3, z + 0.7, 2.6, fh - 1.4, win.litDim);
+      const lit = night ? hashRand(seed, 99 + f * 7 + i) > 0.35 : false;
+      if (lit) eastWindow(ctx, tx + tw, ty + 0.9 + i * 3.7, z + 0.65, 2.8, fh - 1.3, win.litDim);
     }
-    poly(ctx, [[tx, ty + td + 0.08, z], [tx + tw, ty + td + 0.08, z], [tx + tw, ty + td + 0.08, z + 0.45], [tx, ty + td + 0.08, z + 0.45]], rgba('#FFFFFF', 0.35));
+    poly(ctx, [[tx, ty + td + 0.08, z], [tx + tw, ty + td + 0.08, z], [tx + tw, ty + td + 0.08, z + 0.5], [tx, ty + td + 0.08, z + 0.5]], night ? rgba(p.roofLight, 0.55) : rgba('#FFFFFF', 0.42));
   }
   for (let i = 0; i <= 5; i++) {
     const fx = tx + i * (tw / 5);
-    poly(ctx, [[fx - 0.35, ty + td + 0.1, ph], [fx + 0.35, ty + td + 0.1, ph], [fx + 0.35, ty + td + 0.1, ph + th], [fx - 0.35, ty + td + 0.1, ph + th]], p.main);
+    poly(ctx, [[fx - 0.45, ty + td + 0.1, ph], [fx + 0.45, ty + td + 0.1, ph], [fx + 0.45, ty + td + 0.1, ph + th], [fx - 0.45, ty + td + 0.1, ph + th]], night ? p.roofLight : p.main);
   }
   // Sky reflection sheen
   if (!night) {
-    poly(ctx, [[tx + 2, ty + td + 0.12, ph + th * 0.55], [tx + 6, ty + td + 0.12, ph + th * 0.55], [tx + 11, ty + td + 0.12, ph + th], [tx + 7, ty + td + 0.12, ph + th]], 'rgba(255,255,255,0.22)');
+    poly(ctx, [[tx + 2, ty + td + 0.12, ph + th * 0.52], [tx + 6.5, ty + td + 0.12, ph + th * 0.52], [tx + 12, ty + td + 0.12, ph + th], [tx + 7.5, ty + td + 0.12, ph + th]], 'rgba(255,255,255,0.28)');
   }
 
-  // Setback crown + mechanical penthouse
+  // Illuminated Neon Setback Crown + Mechanical Penthouse + Helipad Badge
   const cz = ph + th;
-  box(ctx, tx + 2.5, ty + 2.5, tw - 5, td - 5, cz, 3.2, { top: p.main, south: p.roofDark, east: p.wall });
-  box(ctx, tx + 5, ty + 4, 4, 3.5, cz + 3.2, 2.2, { top: '#E3E7EC', south: '#AEB6C0', east: '#959EAA' });
+  box(ctx, tx - 0.6, ty - 0.6, tw + 1.2, td + 1.2, cz - 1.4, 1.6, {
+    top: '#FFFFFF',
+    south: p.roofLight,
+    east: p.main,
+  });
+  box(ctx, tx + 2.2, ty + 2.2, tw - 4.4, td - 4.4, cz + 0.2, 4.2, {
+    top: p.roofLight,
+    south: p.main,
+    east: p.roofDark,
+    edge: '#FFFFFF',
+  });
+  box(ctx, tx + 5.2, ty + 4.2, 4.5, 4.0, cz + 4.4, 2.6, { top: '#F8FAFC', south: '#CBD5E1', east: '#94A3B8' });
 
-  // Antenna with blinking aviation light
-  const [ax, ay] = proj([tx + tw * 0.62, ty + td * 0.45, cz + 3.2]);
-  const [atx, aty] = proj([tx + tw * 0.62, ty + td * 0.45, cz + 12]);
-  ctx.strokeStyle = '#5A6270';
-  ctx.lineWidth = 1;
+  // Twin Spires with Pulsing Aviation Beacons
+  const [ax, ay] = proj([tx + tw * 0.62, ty + td * 0.45, cz + 4.4]);
+  const [atx, aty] = proj([tx + tw * 0.62, ty + td * 0.45, cz + 15]);
+  ctx.strokeStyle = '#E2E8F0';
+  ctx.lineWidth = 1.3;
   ctx.beginPath();
   ctx.moveTo(ax, ay);
   ctx.lineTo(atx, aty);
   ctx.stroke();
-  const blink = (Math.sin(t * 4 + seed) + 1) / 2;
-  ctx.fillStyle = `rgba(255, 59, 48, ${0.35 + blink * 0.65})`;
+  const blink = (Math.sin(t * 4.5 + seed) + 1) / 2;
+  ctx.fillStyle = `rgba(255, 59, 48, ${0.45 + blink * 0.55})`;
   ctx.beginPath();
-  ctx.arc(atx, aty, 1.5 + blink * 0.8, 0, Math.PI * 2);
+  ctx.arc(atx, aty, 2.0 + blink * 1.1, 0, Math.PI * 2);
   ctx.fill();
 }
 

@@ -913,7 +913,25 @@ export class GameRenderer {
       this.ctx.restore();
     }
 
-    // 2. PASS A: Road Outer Casing (Curbs) + Roundabout Rings + Driveway/Entrance Throats
+    // 2. PASS A: 3D Tactile Road Drop Shadow + Road Outer Casing (Curbs)
+    this.ctx.save();
+    this.ctx.strokeStyle =
+      this.env.solar.nightFactor > 0.45 ? 'rgba(0, 0, 0, 0.42)' : 'rgba(15, 23, 42, 0.16)';
+    this.ctx.lineWidth = casingWidth + 1.5;
+    this.ctx.lineCap = 'round';
+    this.ctx.lineJoin = 'round';
+    const rShadowDx = this.env.solar.shadowDx * 2.2;
+    const rShadowDy = 2.2 + this.env.solar.shadowDy * 3.2;
+    for (const road of this.roadNetwork.roads.values()) {
+      if (road.isTunnel || road.isBridge) continue;
+      if (this.isInternalRoundaboutCorner(road, buildingDirsMap)) continue;
+      const cx = (road.x + 0.5) * tileSize + rShadowDx;
+      const cy = (road.y + 0.5) * tileSize + rShadowDy;
+      this.drawTileRoadGeometry(road, cx, cy, tileSize, buildingDirsMap, false);
+      this.ctx.stroke();
+    }
+    this.ctx.restore();
+
     this.ctx.save();
     this.ctx.strokeStyle = theme.ROAD_CASING;
     this.ctx.fillStyle = theme.ROAD_CASING;
@@ -1853,7 +1871,12 @@ export class GameRenderer {
     const roadWidth = tileSize * 0.48;
     const casingWidth = roadWidth + 5;
 
-    for (const house of this.level.houses) {
+    // Painter's algorithm Y-sort + Tier sort so High-Rises and southern buildings overlap northern tiles cleanly in 2.5D!
+    const sortedHouses = [...this.level.houses].sort(
+      (a, b) => a.y - b.y || (a.tier || 1) - (b.tier || 1) || a.x - b.x
+    );
+
+    for (const house of sortedHouses) {
       const cx = (house.x + 0.5) * tileSize;
       const cy = (house.y + 0.5) * tileSize;
       const scheme = CONFIG.COLORS.BUILDINGS[house.color];
@@ -1869,13 +1892,43 @@ export class GameRenderer {
       this.ctx.translate(cx, cy);
       this.ctx.scale(scale, scale);
 
+      // 0. Ambient Ground Glow for Tier 2 Apartments & Tier 3 High-Rises (plus subtle night glow for all)
+      if (tier >= 2 || this.env.solar.nightFactor > 0.25) {
+        const glowR = tier === 3 ? tileSize * 0.85 : tier === 2 ? tileSize * 0.68 : tileSize * 0.52;
+        const glowAlpha =
+          tier === 3
+            ? 0.22 + this.env.solar.nightFactor * 0.16
+            : tier === 2
+            ? 0.14 + this.env.solar.nightFactor * 0.12
+            : this.env.solar.nightFactor * 0.12;
+        const grad = this.ctx.createRadialGradient(0, 0, 4, 0, 0, glowR);
+        grad.addColorStop(0, scheme.roofLight);
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        this.ctx.save();
+        this.ctx.globalAlpha = glowAlpha;
+        this.ctx.fillStyle = grad;
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, glowR, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.restore();
+      }
+
       // 1. Property Lot Pad & Driveway Apron (rotated toward driveway)
       this.ctx.save();
       this.ctx.rotate(driveAngle);
 
-      this.ctx.fillStyle = mix(scheme.lot, '#222B3B', this.env.solar.nightFactor);
-      this.roundRect(-tileSize * 0.44, -tileSize * 0.40, tileSize * 0.88, tileSize * 0.80, 7);
+      const padW = tier === 3 ? tileSize * 0.94 : tier === 2 ? tileSize * 0.90 : tileSize * 0.86;
+      const padH = tier === 3 ? tileSize * 0.88 : tier === 2 ? tileSize * 0.84 : tileSize * 0.78;
+      this.ctx.fillStyle = mix(scheme.lot, '#242F44', this.env.solar.nightFactor * 0.85);
+      this.roundRect(-padW / 2, -padH / 2, padW, padH, tier >= 2 ? 8 : 6);
       this.ctx.fill();
+
+      // Crisp Color-Coded Lot Perimeter Rim so every building color & tier pops out!
+      this.ctx.strokeStyle = tier >= 2 ? scheme.roofLight : scheme.main;
+      this.ctx.lineWidth = tier === 3 ? 2.2 : tier === 2 ? 1.6 : 1.1;
+      this.ctx.globalAlpha = tier >= 2 ? 0.85 : 0.55;
+      this.ctx.stroke();
+      this.ctx.globalAlpha = 1;
 
       // Distance to target tile (1 for orthogonal, sqrt(2) for diagonal)
       const targetDist = Math.hypot(targetTile.x - house.x, targetTile.y - house.y);
@@ -1905,6 +1958,10 @@ export class GameRenderer {
       // Shift building body slightly back along the driveway axis, then un-rotate so lighting/shadows are globally consistent!
       this.ctx.translate(-4.5, 0);
       this.ctx.rotate(-driveAngle);
+
+      // Scale up Tier 2 Apartments (1.12x) and Tier 3 High-Rise Skyscrapers (1.24x) so towers soar above 1x1 houses!
+      const tierVisualScale = tier === 3 ? 1.24 : tier === 2 ? 1.12 : 1.02;
+      this.ctx.scale(tierVisualScale, tierVisualScale);
 
       // Render crisp 3D residential architecture in selected style ('diorama' | 'clay' | 'modern')
       const houseSeed = (house.x * 37 + house.y * 19 + tier * 7) % 1000;
@@ -2072,7 +2129,19 @@ export class GameRenderer {
         drawStoreAlert(this.ctx, stage, progress, 0, 0, halfW, halfH, this.animTime, 'under');
       }
 
-      // 1. Compound Base Lot & Drop Shadow
+      // 1. Compound Base Lot, Ambient Landmark Glow & Drop Shadow
+      const destGlowR = Math.max(halfW, halfH) * 1.38;
+      const destGlow = this.ctx.createRadialGradient(0, 0, halfW * 0.35, 0, 0, destGlowR);
+      destGlow.addColorStop(0, scheme.roofLight);
+      destGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      this.ctx.save();
+      this.ctx.globalAlpha = 0.16 + this.env.solar.nightFactor * 0.18;
+      this.ctx.fillStyle = destGlow;
+      this.ctx.beginPath();
+      this.ctx.arc(0, 0, destGlowR, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.restore();
+
       this.ctx.fillStyle = scheme.shadow;
       this.roundRect(
         -halfW + this.env.solar.shadowDx * 6,
@@ -2083,14 +2152,14 @@ export class GameRenderer {
       );
       this.ctx.fill();
 
-      this.ctx.fillStyle = mix(scheme.lot, '#222B3B', this.env.solar.nightFactor);
+      this.ctx.fillStyle = mix(scheme.lot, '#242F44', this.env.solar.nightFactor * 0.82);
       this.roundRect(-halfW, -halfH, halfW * 2, halfH * 2, 12);
       this.ctx.fill();
-      if (this.env.solar.nightFactor > 0.35) {
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-        this.ctx.lineWidth = 1.2;
-        this.ctx.stroke();
-      }
+
+      // Vibrant Brand-Colored Landmark Lot Border
+      this.ctx.strokeStyle = this.env.solar.nightFactor > 0.3 ? scheme.roofLight : scheme.main;
+      this.ctx.lineWidth = dest.isCircular || dest.isTrainStation ? 2.4 : 1.8;
+      this.ctx.stroke();
 
       // 2. Asphalt Parking Lot (automatically faces North if connected from North, otherwise South!)
       const lotH = halfH - 5;
