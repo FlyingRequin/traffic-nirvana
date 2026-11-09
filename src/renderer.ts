@@ -2086,7 +2086,12 @@ export class GameRenderer {
     const tileSize = CONFIG.TILE_SIZE;
     const theme = this.getTheme();
 
-    for (const dest of this.level.destinations) {
+    // Sort South-to-North (and lower tier before taller towers) for true 2.5D Painter's depth ordering
+    const sortedDestinations = [...this.level.destinations].sort(
+      (a, b) => a.y - b.y || (a.tier || (a.isCircular ? 3 : 1)) - (b.tier || (b.isCircular ? 3 : 1))
+    );
+
+    for (const dest of sortedDestinations) {
       const px = dest.x * tileSize;
       const py = dest.y * tileSize;
       const pw = dest.w * tileSize;
@@ -2094,6 +2099,7 @@ export class GameRenderer {
       const cx = px + pw / 2;
       const cy = py + ph / 2;
       const scheme = CONFIG.COLORS.BUILDINGS[dest.color];
+      const storeTier: 1 | 2 | 3 | 4 = dest.tier || (dest.isCircular ? 3 : 1);
       const scale = this.easeOutBack(dest.spawnAnimation);
 
       const connectedRoads = this.traffic.getDestinationRoadNeighbors(dest);
@@ -2129,13 +2135,13 @@ export class GameRenderer {
         drawStoreAlert(this.ctx, stage, progress, 0, 0, halfW, halfH, this.animTime, 'under');
       }
 
-      // 1. Compound Base Lot, Ambient Landmark Glow & Drop Shadow
-      const destGlowR = Math.max(halfW, halfH) * 1.38;
-      const destGlow = this.ctx.createRadialGradient(0, 0, halfW * 0.35, 0, 0, destGlowR);
+      // 1. Compound Base Lot, Progressive Ambient Landmark Glow & Drop Shadow
+      const destGlowR = Math.max(halfW, halfH) * (1.28 + storeTier * 0.14);
+      const destGlow = this.ctx.createRadialGradient(0, 0, halfW * 0.3, 0, 0, destGlowR);
       destGlow.addColorStop(0, scheme.roofLight);
       destGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
       this.ctx.save();
-      this.ctx.globalAlpha = 0.16 + this.env.solar.nightFactor * 0.18;
+      this.ctx.globalAlpha = 0.14 + storeTier * 0.04 + this.env.solar.nightFactor * 0.18;
       this.ctx.fillStyle = destGlow;
       this.ctx.beginPath();
       this.ctx.arc(0, 0, destGlowR, 0, Math.PI * 2);
@@ -2144,8 +2150,8 @@ export class GameRenderer {
 
       this.ctx.fillStyle = scheme.shadow;
       this.roundRect(
-        -halfW + this.env.solar.shadowDx * 6,
-        -halfH + this.env.solar.shadowDy * 14,
+        -halfW + this.env.solar.shadowDx * (5 + storeTier * 1.5),
+        -halfH + this.env.solar.shadowDy * (11 + storeTier * 2.5),
         halfW * 2,
         halfH * 2,
         12
@@ -2156,10 +2162,20 @@ export class GameRenderer {
       this.roundRect(-halfW, -halfH, halfW * 2, halfH * 2, 12);
       this.ctx.fill();
 
-      // Vibrant Brand-Colored Landmark Lot Border
+      // Vibrant Brand-Colored Landmark Lot Border (scales with store tier!)
       this.ctx.strokeStyle = this.env.solar.nightFactor > 0.3 ? scheme.roofLight : scheme.main;
-      this.ctx.lineWidth = dest.isCircular || dest.isTrainStation ? 2.4 : 1.8;
+      this.ctx.lineWidth = storeTier >= 3 || dest.isTrainStation ? 2.6 : storeTier === 2 ? 2.1 : 1.7;
       this.ctx.stroke();
+
+      // Inner prestige trim ring for Tier 3 & Tier 4 Commercial Hubs
+      if (storeTier >= 3) {
+        this.ctx.save();
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+        this.ctx.lineWidth = 1.0;
+        this.roundRect(-halfW + 2.5, -halfH + 2.5, (halfW - 2.5) * 2, (halfH - 2.5) * 2, 10);
+        this.ctx.stroke();
+        this.ctx.restore();
+      }
 
       // 2. Asphalt Parking Lot (automatically faces North if connected from North, otherwise South!)
       const lotH = halfH - 5;
@@ -2186,8 +2202,13 @@ export class GameRenderer {
         this.ctx.stroke();
       }
 
-      // Painted White Parking Stalls
-      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      // Painted Parking Stalls (Gold VIP stalls at Tier 4, Brand-tinted at Tier 3)
+      this.ctx.strokeStyle =
+        storeTier === 4
+          ? 'rgba(250, 204, 21, 0.55)'
+          : storeTier === 3
+            ? 'rgba(255, 255, 255, 0.5)'
+            : 'rgba(255, 255, 255, 0.35)';
       this.ctx.lineWidth = 1.5;
       for (let s = -1; s <= 1; s++) {
         const sx = s * 16;
@@ -2195,6 +2216,18 @@ export class GameRenderer {
         this.ctx.moveTo(sx, lotTop + 4);
         this.ctx.lineTo(sx, lotTop + lotH - 4);
         this.ctx.stroke();
+      }
+
+      // Illuminated plaza bollard lights along parking apron for Tier 2+ stores
+      if (storeTier >= 2) {
+        const bollardY = isNorthEntrance ? lotTop + 2 : lotTop + lotH - 2;
+        for (let b = -2; b <= 2; b++) {
+          const bx = b * 14;
+          this.ctx.fillStyle = this.isNightMode ? scheme.roofLight : scheme.main;
+          this.ctx.beginPath();
+          this.ctx.arc(bx, bollardY, 1.6, 0, Math.PI * 2);
+          this.ctx.fill();
+        }
       }
 
       // Draw any cars currently parked in stalls
@@ -2225,9 +2258,29 @@ export class GameRenderer {
       }
       this.ctx.stroke();
 
-      // 3. Architectural 3D Diorama Building Structure (Design A matching houses)
-      const destType = dest.isTrainStation ? 'station' : dest.isCircular ? 'circular' : 'store';
+      // 3. Architectural 3D Diorama Building Structure (4-Stage Commercial Progression)
+      const destType = dest.isTrainStation
+        ? 'station'
+        : storeTier === 4
+          ? 'megatower'
+          : storeTier === 3
+            ? 'circular'
+            : storeTier === 2
+              ? 'galleria'
+              : 'store';
       const destSeed = (dest.x * 47 + dest.y * 23) % 1000;
+      const tierVisualScale = dest.isTrainStation
+        ? 1.04
+        : storeTier === 4
+          ? 1.16
+          : storeTier === 3
+            ? 1.08
+            : storeTier === 2
+              ? 1.04
+              : 1.0;
+
+      this.ctx.save();
+      this.ctx.scale(tierVisualScale, tierVisualScale);
       drawDestination(
         this.ctx,
         destType,
@@ -2239,8 +2292,54 @@ export class GameRenderer {
           isNorthEntrance,
           criticalDanger: stage === 'critical',
           offsetY: isNorthEntrance ? 20 : -20,
+          tier: storeTier,
         }
       );
+      this.ctx.restore();
+
+      // 4. Commercial Progression Tier Emblem & Next-Tier Progress Bar (Bottom Corner of Lot)
+      if (!dest.isTrainStation) {
+        const badgeX = -halfW + 16;
+        const badgeY = halfH - 9;
+        const serviced = dest.servicedCount || 0;
+        const tierProgress =
+          storeTier === 1
+            ? Math.min(1, serviced / 10)
+            : storeTier === 2
+              ? Math.min(1, (serviced - 10) / 14)
+              : storeTier === 3
+                ? Math.min(1, (serviced - 24) / 18)
+                : 1;
+
+        this.ctx.save();
+        this.ctx.translate(badgeX, badgeY);
+
+        // Dark glass pill backing
+        this.ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+        this.roundRect(-12, -6.5, 24, 13, 6.5);
+        this.ctx.fill();
+        this.ctx.strokeStyle = storeTier === 4 ? '#FACC15' : scheme.roofLight;
+        this.ctx.lineWidth = 1.2;
+        this.ctx.stroke();
+
+        // Mini progress bar along bottom inside pill for Tiers 1..3
+        if (storeTier < 4 && tierProgress > 0) {
+          this.ctx.fillStyle = scheme.main;
+          this.roundRect(-9, 3.2, Math.max(2, 18 * tierProgress), 1.8, 0.9);
+          this.ctx.fill();
+        }
+
+        // Tier Roman Numeral / Star Label
+        const tierLabel =
+          storeTier === 4 ? 'IV★' : storeTier === 3 ? 'III' : storeTier === 2 ? 'II' : 'I';
+        this.ctx.fillStyle = storeTier === 4 ? '#FDE047' : '#FFFFFF';
+        this.ctx.font = '800 7.5px "Plus Jakarta Sans", sans-serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(tierLabel, 0, storeTier < 4 ? -0.8 : 0.2);
+
+        this.ctx.restore();
+      }
 
       this.ctx.restore();
     }

@@ -127,7 +127,9 @@ export interface Destination {
   w: number;
   h: number;
   color: BuildingColor;
-  isCircular: boolean; // Upgraded high-demand hub
+  tier?: 1 | 2 | 3 | 4; // 1 = Market, 2 = Galleria, 3 = Rotunda Hub, 4 = Mega-Commerce Tower
+  servicedCount?: number; // Total cars/commuters serviced (drives visual & capacity progression)
+  isCircular: boolean; // Upgraded high-demand hub (Tier 3+)
   isTrainStation?: boolean; // Commuter Train Station hub along the rail line
   entrance: GridCoord; // Road tile adjacent to parking lot
   pins: number;

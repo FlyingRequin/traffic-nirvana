@@ -579,10 +579,11 @@ export class LevelProgression {
     const colorDests = this.destinations.filter((d) => d.color === color);
     if (colorDests.length === 0) return 999;
 
-    const demandWeight = colorDests.reduce(
-      (sum, d) => sum + (d.isCircular || d.isTrainStation ? 1.55 : 1.0),
-      0
-    );
+    const demandWeight = colorDests.reduce((sum, d) => {
+      const tier = d.tier || (d.isCircular ? 3 : 1);
+      const w = d.isTrainStation ? 1.55 : tier === 4 ? 1.85 : tier === 3 ? 1.55 : tier === 2 ? 1.25 : 1.0;
+      return sum + w;
+    }, 0);
     const carSupply = this.houses
       .filter((h) => h.color === color)
       .reduce((sum, h) => sum + h.totalCars, 0);
@@ -644,8 +645,8 @@ export class LevelProgression {
       spawnedMilestoneToday = true;
     }
 
-    // 1. Periodic Store Upgrades (Square -> Circular High-Demand Hub)
-    if (day >= 9 && (day === 9 || day === 14 || (day >= 19 && (day - 19) % 5 === 0))) {
+    // 1. Multi-Tier Store Progression (Market -> Department Galleria -> Geodesic Rotunda -> Mega-Commerce Tower)
+    if (day >= 6 && (day - 6) % 3 === 0) {
       this.upgradeExistingStore();
     }
 
@@ -892,6 +893,8 @@ export class LevelProgression {
       w,
       h,
       color,
+      tier: isCircular ? 3 : 1,
+      servicedCount: 0,
       isCircular,
       isTrainStation,
       entrance,
@@ -1058,11 +1061,24 @@ export class LevelProgression {
       }
     }
 
+    // Also advance commercial store tiers during densification sweeps
+    const upgradeableStores = this.destinations.filter(
+      (d) => !d.isTrainStation && (d.tier || (d.isCircular ? 3 : 1)) < 4
+    );
+    if (upgradeableStores.length > 0) {
+      const storeUpgrades = Math.max(1, Math.min(2, Math.ceil(upgradeableStores.length * 0.4)));
+      for (let s = 0; s < storeUpgrades; s++) {
+        if (this.upgradeExistingStore(undefined, true)) {
+          upgradedCount++;
+        }
+      }
+    }
+
     if (upgradedCount > 0 && announce) {
       sound.playMotorwayPlacement();
       if (this.onToast) {
         this.onToast(
-          `🏙️ Urban Densification: ${upgradedCount} suburban lots consolidated into Mid-Rises & Skyscrapers!`
+          `🏙️ Urban Densification: ${upgradedCount} lots & commercial hubs upgraded into high-density towers!`
         );
       }
     }
@@ -1070,25 +1086,50 @@ export class LevelProgression {
   }
 
   /**
-   * Upgrades an existing rectangular store into a Circular High-Demand Hub
-   * as the city matures.
+   * Advances a commercial store through its 4 architectural & capacity tiers:
+   * Tier 1: Corner Market -> Tier 2: Department Galleria -> Tier 3: Geodesic Rotunda Hub -> Tier 4: Mega-Commerce Arcology Tower
    */
-  private upgradeExistingStore() {
-    const candidates = this.destinations.filter((d) => !d.isCircular && !d.isTrainStation);
-    if (candidates.length === 0) return;
+  public upgradeExistingStore(targetDest?: Destination, silent: boolean = false): Destination | null {
+    const getStoreTier = (d: Destination): 1 | 2 | 3 | 4 =>
+      d.tier || (d.isCircular ? 3 : 1);
 
-    const target = candidates[0];
-    target.isCircular = true;
-    target.spawnAnimation = 0.22; // trigger spring pop animation
-    target.maxPins = CONFIG.GAMEPLAY.MAX_PINS_PER_DESTINATION + 3;
-    target.spawnInterval = Math.max(2.1, target.spawnInterval * 0.72);
-    sound.playMotorwayPlacement();
-
-    if (this.onToast) {
-      this.onToast(
-        `${target.color.toUpperCase()} store upgraded to a Circular High-Demand Hub!`
-      );
+    let target = targetDest || null;
+    if (!target) {
+      const candidates = this.destinations
+        .filter((d) => !d.isTrainStation && getStoreTier(d) < 4)
+        .sort((a, b) => {
+          const tierDiff = getStoreTier(a) - getStoreTier(b);
+          if (tierDiff !== 0) return tierDiff;
+          return (b.servicedCount || 0) - (a.servicedCount || 0);
+        });
+      if (candidates.length === 0) return null;
+      target = candidates[0];
     }
+
+    const currentTier = getStoreTier(target);
+    if (currentTier >= 4 || target.isTrainStation) return null;
+
+    const nextTier = (currentTier + 1) as 2 | 3 | 4;
+    target.tier = nextTier;
+    target.isCircular = nextTier === 3;
+    target.spawnAnimation = 0.25; // trigger spring pop animation
+    target.maxPins = CONFIG.GAMEPLAY.MAX_PINS_PER_DESTINATION + (nextTier - 1);
+    target.spawnInterval = Math.max(1.9, target.spawnInterval * 0.86);
+
+    if (!silent) {
+      sound.playMotorwayPlacement();
+      if (this.onToast) {
+        const tierNames: Record<2 | 3 | 4, string> = {
+          2: '🛍️ Tier 2 Multi-Story Department Galleria',
+          3: '🏛️ Tier 3 Geodesic Rotunda Exchange Hub',
+          4: '🏙️ Tier 4 Mega-Commerce Arcology Tower',
+        };
+        this.onToast(
+          `${target.color.toUpperCase()} Store evolved into a ${tierNames[nextTier]}!`
+        );
+      }
+    }
+    return target;
   }
 
   /**

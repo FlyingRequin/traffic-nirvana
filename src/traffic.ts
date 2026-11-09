@@ -331,6 +331,7 @@ export class TrafficSimulation {
               }
 
               this.onScoreIncrement(points);
+              this.recordStoreService(dest, delivered);
 
               this.floatingTexts.push({
                 id: `ft_sub_${Date.now()}_${Math.random()}`,
@@ -847,6 +848,7 @@ export class TrafficSimulation {
           }
 
           this.onScoreIncrement(points);
+          this.recordStoreService(dest, 1);
 
           this.floatingTexts.push({
             id: `ft_${Date.now()}_${Math.random()}`,
@@ -1085,6 +1087,56 @@ export class TrafficSimulation {
         car.y += (segDy / segDist) * remainingStep;
         remainingStep = 0;
       }
+    }
+  }
+
+  /**
+   * Tracks completed commuter deliveries at a store and automatically promotes
+   * the store's architectural & capacity tier at service milestones:
+   * - 10 deliveries: Tier 1 Market -> Tier 2 Department Galleria
+   * - 24 deliveries: Tier 2 Galleria -> Tier 3 Geodesic Rotunda Hub
+   * - 42 deliveries: Tier 3 Rotunda -> Tier 4 Mega-Commerce Arcology Tower
+   */
+  private recordStoreService(dest: Destination, amount: number) {
+    dest.servicedCount = (dest.servicedCount || 0) + amount;
+    if (dest.isTrainStation) return;
+
+    const currentTier = dest.tier || (dest.isCircular ? 3 : 1);
+    let nextTier: 2 | 3 | 4 | null = null;
+    if (currentTier === 1 && dest.servicedCount >= 10) {
+      nextTier = 2;
+    } else if (currentTier === 2 && dest.servicedCount >= 24) {
+      nextTier = 3;
+    } else if (currentTier === 3 && dest.servicedCount >= 42) {
+      nextTier = 4;
+    }
+
+    if (nextTier) {
+      dest.tier = nextTier;
+      dest.isCircular = nextTier === 3;
+      dest.spawnAnimation = 0.25;
+      dest.maxPins = CONFIG.GAMEPLAY.MAX_PINS_PER_DESTINATION + (nextTier - 1);
+      dest.spawnInterval = Math.max(1.9, dest.spawnInterval * 0.88);
+      sound.playMotorwayPlacement();
+
+      const badgeText =
+        nextTier === 2
+          ? '⬆️ TIER II GALLERIA!'
+          : nextTier === 3
+            ? '⬆️ TIER III ROTUNDA HUB!'
+            : '⬆️ TIER IV MEGA-TOWER!';
+
+      this.floatingTexts.push({
+        id: `ft_tier_${Date.now()}_${Math.random()}`,
+        x: (dest.x + dest.w / 2) * CONFIG.TILE_SIZE,
+        y: dest.y * CONFIG.TILE_SIZE - 18,
+        text: badgeText,
+        color: CONFIG.COLORS.BUILDINGS[dest.color].roofLight,
+        opacity: 1,
+        scale: 1.05,
+        life: 0,
+        maxLife: 1.8,
+      });
     }
   }
 

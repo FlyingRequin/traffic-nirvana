@@ -429,6 +429,8 @@ export interface DestinationArtOptions {
   criticalDanger?: boolean;
   /** Y offset in lot coordinate space. Defaults to -19 (+19 if isNorthEntrance). 0 centers on origin. */
   offsetY?: number;
+  /** Visual & capacity progression tier (1 = Market, 2 = Galleria, 3 = Geodesic Hub, 4 = Mega-Tower) */
+  tier?: 1 | 2 | 3 | 4;
 }
 
 function parseDestOptions(optionsOrNorth?: boolean | DestinationArtOptions, critical?: boolean) {
@@ -436,12 +438,13 @@ function parseDestOptions(optionsOrNorth?: boolean | DestinationArtOptions, crit
     const isNorth = !!optionsOrNorth.isNorthEntrance;
     const crit = !!optionsOrNorth.criticalDanger;
     const yOff = optionsOrNorth.offsetY !== undefined ? optionsOrNorth.offsetY : (isNorth ? 19 : -19);
-    return { isNorthEntrance: isNorth, criticalDanger: crit, offsetY: yOff };
+    const tier = optionsOrNorth.tier || 1;
+    return { isNorthEntrance: isNorth, criticalDanger: crit, offsetY: yOff, tier };
   }
   const isNorth = !!optionsOrNorth;
   const crit = !!critical;
   const yOff = isNorth ? 19 : -19;
-  return { isNorthEntrance: isNorth, criticalDanger: crit, offsetY: yOff };
+  return { isNorthEntrance: isNorth, criticalDanger: crit, offsetY: yOff, tier: 1 as const };
 }
 
 /**
@@ -669,14 +672,149 @@ export function dioramaStore(
 }
 
 /**
- * 3D cylindrical / rotunda high-demand destination hub matching Design A.
+ * TIER 2 STORE: 3D Multi-Story Department Emporium / Galleria matching Design A.
  * Features:
- * - Faceted cylindrical base rotunda with ground-floor architectural arched windows
- * - Annular promenade roof deck with safety balustrade
- * - Upper clerestory drum with illuminated glass ribbon & structural mullion fins
- * - Geodesic segmented glass dome with internal illumination & specular glints
- * - Forward-projecting grand entrance portal with canopy, columns & welcome lighting
- * - Apex transit spire with pulsing beacon orb
+ * - Full-width ground retail concourse + setback 2nd-story glass atrium mezzanine (h = 22)
+ * - Rooftop garden terrace on East wing with trees, planters & illuminated pergola
+ * - Panoramic brand-tinted upper glass curtain wall with vertical neon mullions
+ * - Twin illuminated entrance pylons + cantilevered double-deck canopy & glowing rooftop billboard
+ */
+export function dioramaDepartmentGalleria(
+  ctx: CanvasRenderingContext2D,
+  p: ArtPalette,
+  night: boolean,
+  seed = 0,
+  time = 0,
+  optionsOrNorth: boolean | DestinationArtOptions = false,
+  criticalDanger = false
+) {
+  const opts = parseDestOptions(optionsOrNorth, criticalDanger);
+
+  const dangerTint = opts.criticalDanger ? ((Math.sin(time * 9) + 1) / 2) * 0.42 : 0;
+  const brandColor = dangerTint > 0 ? mix(p.main, '#FF3B30', dangerTint) : p.main;
+
+  const wallSouth = mix(p.main, '#FFFFFF', 0.72);
+  const wallEast = mix(p.main, '#9AA5B4', 0.48);
+  const roofDeck = mix(p.roofDark, '#2E3846', 0.35);
+
+  const bw = 68, bd = 27, h1 = 11.5;
+  const bx = -bw / 2;
+  const by = opts.offsetY - bd / 2;
+
+  // 1. Deep 3D Drop Shadow
+  groundShadow(ctx, bx - 1, by - 1, bw + 3, bd + 3, 24, 'rgba(14, 18, 30, 0.32)');
+
+  // 2. Ground Floor Concourse Volume (z = 0..h1)
+  box(ctx, bx, by, bw, bd, 0, h1, {
+    top: roofDeck,
+    south: wallSouth,
+    east: wallEast,
+    edge: 'rgba(15, 23, 42, 0.25)',
+  });
+
+  // Glowing 1st-floor cornice trim band
+  box(ctx, bx - 0.5, by - 0.5, bw + 1, bd + 1, h1, 1.3, {
+    top: p.roofLight,
+    south: brandColor,
+    east: p.roofDark,
+  });
+
+  // 3. East Wing Rooftop Terrace Garden (on top of Ground Floor at x = 10..32, z = h1 + 1.3)
+  const terZ = h1 + 1.3;
+  poly(ctx, [[10, by + 3, terZ + 0.05], [31, by + 3, terZ + 0.05], [31, by + bd - 3, terZ + 0.05], [10, by + bd - 3, terZ + 0.05]], '#34D399');
+  for (const tx of [15, 25]) {
+    const [treeX, treeY] = proj([tx, by + bd * 0.5, terZ + 2.5]);
+    ctx.fillStyle = '#059669';
+    ctx.beginPath();
+    ctx.arc(treeX, treeY, 3.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#6EE7B7';
+    ctx.beginPath();
+    ctx.arc(treeX - 0.9, treeY - 0.9, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 4. Second-Story Setback Galleria Atrium (x = -31..10, w = 41, z = terZ..terZ + 9.5)
+  const h2 = 9.5;
+  const z2Top = terZ + h2;
+  const g2South = mix(p.main, '#FFFFFF', 0.56);
+  const g2East = mix(p.main, '#64748B', 0.42);
+  box(ctx, -31, by + 1.5, 42, bd - 3, terZ, h2, {
+    top: mix(p.roofDark, p.main, 0.4),
+    south: g2South,
+    east: g2East,
+    edge: 'rgba(255, 255, 255, 0.28)',
+  });
+
+  // Panoramic 2nd-story brand-illuminated glass curtain ribbon
+  const upperGlass = night ? mix('#FFE28A', p.roofLight, 0.45) : mix(p.roofLight, '#E0F2FE', 0.65);
+  southWindow(ctx, by + bd - 1.5, -28.5, terZ + 1.4, 37, h2 - 3.0, upperGlass);
+  eastWindow(ctx, 11, by + 4, terZ + 1.4, bd - 8, h2 - 3.0, upperGlass);
+
+  // Vertical neon structural fins across the 2nd floor atrium
+  for (let k = 0; k < 5; k++) {
+    const fx = -25 + k * 7.5;
+    poly(ctx, [[fx - 0.35, by + bd - 1.42, terZ + 1.0], [fx + 0.35, by + bd - 1.42, terZ + 1.0], [fx + 0.35, by + bd - 1.42, z2Top - 0.8], [fx - 0.35, by + bd - 1.42, z2Top - 0.8]], p.roofLight);
+  }
+
+  // Glowing 2nd-Story Crown Parapet + Rooftop Skylight Dome
+  box(ctx, -31.6, by + 1.0, 43.2, bd - 2, z2Top, 1.5, {
+    top: p.roofLight,
+    south: brandColor,
+    east: p.roofDark,
+    edge: '#FFFFFF',
+  });
+  box(ctx, -20, by + 6, 20, 11, z2Top + 1.5, 2.8, {
+    top: night ? '#FFE9A8' : '#E0F2FE',
+    south: brandColor,
+    east: p.roofDark,
+  });
+
+  // 5. Ground Floor Grand Galleria Entrance & Twin Neon Pylons
+  const entX = -30, entW = 40;
+  southWindow(ctx, by + bd, entX + 1.5, 0.6, entW - 3, h1 - 2.0, night ? '#FFE28A' : 'rgba(185, 225, 250, 0.92)');
+  // Twin vertical brand pylons framing entrance
+  for (const px of [entX + 1, entX + entW - 3.5]) {
+    box(ctx, px, by + bd - 0.4, 2.6, 2.6, 0, h1 + 3.5, {
+      top: '#FFFFFF',
+      south: brandColor,
+      east: p.roofDark,
+    });
+  }
+  // Cantilevered Grand Canopy
+  box(ctx, entX - 1, by + bd, entW + 2, 4.2, 8.8, 1.4, {
+    top: p.roofLight,
+    south: brandColor,
+    east: p.roofDark,
+  });
+
+  // East wing Express Delivery Bay
+  southWindow(ctx, by + bd, 14, 1.5, 14, 7.2, '#334155');
+  box(ctx, 13, by + bd, 16, 2.5, 9.2, 0.9, { top: brandColor, south: p.roofDark, east: '#1E293B' });
+
+  // Pulsing rooftop beacon
+  const [bxA, byA] = proj([6, by + 5, z2Top + 1.5]);
+  const [bxB, byB] = proj([6, by + 5, z2Top + 6.5]);
+  ctx.strokeStyle = '#E2E8F0';
+  ctx.lineWidth = 1.0;
+  ctx.beginPath();
+  ctx.moveTo(bxA, byA);
+  ctx.lineTo(bxB, byB);
+  ctx.stroke();
+  const blink = (Math.sin(time * 4.5 + seed) + 1) / 2;
+  ctx.fillStyle = `rgba(255, 59, 48, ${night ? 0.45 + blink * 0.55 : 0.3})`;
+  ctx.beginPath();
+  ctx.arc(bxB, byB, 1.6 + (night ? blink * 0.9 : 0), 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/**
+ * TIER 3 STORE: 3D Cylindrical / Geodesic Rotunda High-Demand Hub matching Design A.
+ * Features:
+ * - Faceted cylindrical base rotunda with brand-tinted architectural colonnade
+ * - Annular neon-rimmed sky-promenade deck
+ * - Brand-illuminated clerestory drum & color-keyed geodesic glass dome (so each color hub glows in its own signature hue!)
+ * - Grand projecting entrance portico & tall apex spire
  */
 export function dioramaCircularHub(
   ctx: CanvasRenderingContext2D,
@@ -696,18 +834,18 @@ export function dioramaCircularHub(
   const cx = 0;
   const cy = opts.offsetY;
 
-  const R1 = 28;
-  const H1 = 7.5;
-  const R2 = 18;
-  const H2 = 6;
-  const domePeakZ = 20.5;
+  const R1 = 29;
+  const H1 = 9.0;
+  const R2 = 19.5;
+  const H2 = 7.2;
+  const domePeakZ = 24.5;
 
   // 1. Soft elliptical ground shadow cast to SE
-  const [shCx, shCy] = proj([cx + 6, cy + 4, 0]);
+  const [shCx, shCy] = proj([cx + 7, cy + 5, 0]);
   ctx.save();
-  ctx.fillStyle = 'rgba(20, 22, 35, 0.25)';
+  ctx.fillStyle = 'rgba(14, 18, 30, 0.32)';
   ctx.beginPath();
-  ctx.ellipse(shCx, shCy, R1 * 1.08, R1 * DY * 1.08, 0, 0, Math.PI * 2);
+  ctx.ellipse(shCx, shCy, R1 * 1.12, R1 * DY * 1.12, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
@@ -726,33 +864,34 @@ export function dioramaCircularHub(
     const nx = Math.cos(midTh), ny = Math.sin(midTh);
     const sunDot = nx * -0.707 + ny * -0.707;
     const shade = Math.max(0, Math.min(1, (sunDot + 1) / 2));
-    const facetWall = mix(p.roofDark, mix(p.main, '#FFFFFF', 0.8), shade * 0.85 + 0.15);
+    const facetWall = mix(p.roofDark, mix(p.main, '#FFFFFF', 0.65), shade * 0.85 + 0.15);
 
     poly(ctx, [[x0, y0, 0], [x1, y1, 0], [x1, y1, H1], [x0, y0, H1]], facetWall);
 
     if (Math.sin(midTh) > 0.15) {
-      const wPad = 0.25;
+      const wPad = 0.22;
       const wx0 = cx + R1 * Math.cos(th0 + (th1 - th0) * wPad);
       const wy0 = cy + R1 * Math.sin(th0 + (th1 - th0) * wPad);
       const wx1 = cx + R1 * Math.cos(th1 - (th1 - th0) * wPad);
       const wy1 = cy + R1 * Math.sin(th1 - (th1 - th0) * wPad);
-      const lit = night && hashRand(seed, i * 7) > 0.35;
-      poly(ctx, [[wx0, wy0, 1.2], [wx1, wy1, 1.2], [wx1, wy1, H1 - 1.6], [wx0, wy0, H1 - 1.6]], lit ? win.lit : night ? win.dark : 'rgba(200, 225, 245, 0.85)');
+      const lit = !night || hashRand(seed, i * 7) > 0.25;
+      const colWin = lit ? (night ? mix('#FFE28A', p.roofLight, 0.38) : mix(p.roofLight, '#FFFFFF', 0.55)) : win.dark;
+      poly(ctx, [[wx0, wy0, 1.2], [wx1, wy1, 1.2], [wx1, wy1, H1 - 1.5], [wx0, wy0, H1 - 1.5]], colWin);
     }
   }
 
-  // Promenade Deck (Annular roof deck of Tier 1 at z = H1)
+  // Promenade Deck (Annular roof deck of Tier 1 at z = H1) with Brand Neon Ring
   const [d1x, d1y] = proj([cx, cy, H1]);
-  ctx.fillStyle = mix(p.roofDark, '#2E3846', 0.4);
+  ctx.fillStyle = mix(p.roofDark, p.main, 0.45);
   ctx.beginPath();
-  ctx.ellipse(d1x, d1y, R1, R1 * DY, 0, 0, Math.PI * 2);
+  ctx.ellipse(d1x, d1y, R1 + 0.5, (R1 + 0.5) * DY, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.strokeStyle = brandColor;
-  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = night ? p.roofLight : brandColor;
+  ctx.lineWidth = 2.2;
   ctx.stroke();
 
-  // 3. Upper Clerestory Drum Tier (z = H1 to H1 + H2 = 13.5)
+  // 3. Upper Clerestory Drum Tier (z = H1 to H1 + H2 = 16.2)
   const zClere = H1 + H2;
   const N2 = 16;
   for (let i = 0; i < N2; i++) {
@@ -765,25 +904,25 @@ export function dioramaCircularHub(
     const x0 = cx + R2 * Math.cos(th0), y0 = cy + R2 * Math.sin(th0);
     const x1 = cx + R2 * Math.cos(th1), y1 = cy + R2 * Math.sin(th1);
 
-    const winFill = night ? '#FFE28A' : 'rgba(195, 230, 255, 0.92)';
+    const winFill = night ? mix(p.roofLight, '#FFF3B0', 0.42) : mix(p.roofLight, '#E0F2FE', 0.55);
     poly(ctx, [[x0, y0, H1], [x1, y1, H1], [x1, y1, zClere], [x0, y0, zClere]], winFill);
 
-    poly(ctx, [[x0 - 0.4, y0, H1], [x0 + 0.4, y0, H1], [x0 + 0.4, y0, zClere], [x0 - 0.4, y0, zClere]], p.roofDark);
+    poly(ctx, [[x0 - 0.45, y0, H1], [x0 + 0.45, y0, H1], [x0 + 0.45, y0, zClere], [x0 - 0.45, y0, zClere]], brandColor);
   }
 
   // Cornice band at top of clerestory drum (z = zClere)
   const [d2x, d2y] = proj([cx, cy, zClere]);
-  ctx.fillStyle = p.roofLight;
+  ctx.fillStyle = brandColor;
   ctx.beginPath();
-  ctx.ellipse(d2x, d2y, R2 + 0.4, (R2 + 0.4) * DY, 0, 0, Math.PI * 2);
+  ctx.ellipse(d2x, d2y, R2 + 0.8, (R2 + 0.8) * DY, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = brandColor;
-  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 1.4;
   ctx.stroke();
 
-  // 4. Geodesic Segmented Glass Dome (z = zClere to domePeakZ)
+  // 4. Brand-Keyed Geodesic Segmented Glass Dome (z = zClere to domePeakZ)
   const NDome = 16;
-  const zMidDome = zClere + 4.2;
+  const zMidDome = zClere + 4.8;
   const RMidDome = R2 * 0.62;
 
   for (let i = 0; i < NDome; i++) {
@@ -801,10 +940,10 @@ export function dioramaCircularHub(
     const sunDot = nx * -0.707 + ny * -0.707;
     const glassShade = Math.max(0, Math.min(1, (sunDot + 1) / 2));
     const glassColor = night
-      ? mix('#FFE28A', '#F5A623', 0.25 + glassShade * 0.3)
-      : mix('rgba(170, 215, 245, 0.95)', 'rgba(235, 250, 255, 0.95)', glassShade);
+      ? mix(brandColor, mix(p.roofLight, '#FFFFFF', 0.55), 0.35 + glassShade * 0.5)
+      : mix(p.main, mix(p.roofLight, '#FFFFFF', 0.75), 0.4 + glassShade * 0.5);
 
-    poly(ctx, [[x0, y0, zClere], [x1, y1, zClere], [mx1, my1, zMidDome], [mx0, my0, zMidDome]], glassColor, 'rgba(255, 255, 255, 0.4)', 0.5);
+    poly(ctx, [[x0, y0, zClere], [x1, y1, zClere], [mx1, my1, zMidDome], [mx0, my0, zMidDome]], glassColor, 'rgba(255, 255, 255, 0.55)', 0.6);
   }
 
   for (let i = 0; i < NDome; i++) {
@@ -816,37 +955,35 @@ export function dioramaCircularHub(
     const mx0 = cx + RMidDome * Math.cos(th0), my0 = cy + RMidDome * Math.sin(th0);
     const mx1 = cx + RMidDome * Math.cos(th1), my1 = cy + RMidDome * Math.sin(th1);
 
-    const glassColor = night ? '#FFE9A8' : 'rgba(240, 250, 255, 0.95)';
-    poly(ctx, [[mx0, my0, zMidDome], [mx1, my1, zMidDome], [cx, cy, domePeakZ]], glassColor, 'rgba(255, 255, 255, 0.5)', 0.5);
+    const glassColor = night ? mix(p.roofLight, '#FFFFFF', 0.65) : mix(p.roofLight, '#FFFFFF', 0.78);
+    poly(ctx, [[mx0, my0, zMidDome], [mx1, my1, zMidDome], [cx, cy, domePeakZ]], glassColor, 'rgba(255, 255, 255, 0.65)', 0.6);
   }
 
-  // Specular sky reflection streak on the dome (day only)
-  if (!night) {
-    const [glx0, gly0] = proj([cx - R2 * 0.45, cy - R2 * 0.2, zClere + 2]);
-    const [glx1, gly1] = proj([cx - R2 * 0.1, cy - R2 * 0.05, domePeakZ - 0.5]);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
-    ctx.lineWidth = 2.2;
-    ctx.beginPath();
-    ctx.moveTo(glx0, gly0);
-    ctx.lineTo(glx1, gly1);
-    ctx.stroke();
-  }
+  // Specular sky reflection streak on the dome
+  const [glx0, gly0] = proj([cx - R2 * 0.45, cy - R2 * 0.2, zClere + 2]);
+  const [glx1, gly1] = proj([cx - R2 * 0.1, cy - R2 * 0.05, domePeakZ - 0.5]);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(glx0, gly0);
+  ctx.lineTo(glx1, gly1);
+  ctx.stroke();
 
   // 5. Grand Entrance Portal / Portico (Front South face: y = cy + R1)
-  const portW = 18, portD = 5.5, portH = 5.5;
+  const portW = 20, portD = 6.0, portH = 6.5;
   const portX = cx - portW / 2;
   const portY = cy + R1 - 3;
   southWindow(ctx, portY + portD, portX + 1.5, 0.5, portW - 3, portH - 1, night ? '#FFE9A8' : 'rgba(190, 225, 250, 0.95)');
-  box(ctx, portX, portY, portW, portD, portH, 1.0, {
-    top: brandColor,
-    south: p.roofDark,
-    east: p.wall,
+  box(ctx, portX, portY, portW, portD, portH, 1.4, {
+    top: p.roofLight,
+    south: brandColor,
+    east: p.roofDark,
   });
   for (const colX of [portX + 2.5, portX + portW - 2.5]) {
     const [cBotX, cBotY] = proj([colX, portY + portD - 0.5, 0]);
     const [cTopX, cTopY] = proj([colX, portY + portD - 0.5, portH]);
     ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 1.4;
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
     ctx.moveTo(cBotX, cBotY);
     ctx.lineTo(cTopX, cTopY);
@@ -854,27 +991,189 @@ export function dioramaCircularHub(
   }
   if (night) {
     const [wlX, wlY] = proj([cx, portY + portD + 2, 0.05]);
-    ctx.fillStyle = 'rgba(255, 235, 170, 0.35)';
+    ctx.fillStyle = 'rgba(255, 235, 170, 0.38)';
     ctx.beginPath();
-    ctx.ellipse(wlX, wlY, 9, 4.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(wlX, wlY, 10, 5, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // 6. Apex Spire & Blinking Beacon Orb
+  // 6. Apex Spire & Blinking Brand Beacon Orb
   const [spBaseX, spBaseY] = proj([cx, cy, domePeakZ]);
-  const [spTopX, spTopY] = proj([cx, cy, domePeakZ + 5.5]);
+  const [spTopX, spTopY] = proj([cx, cy, domePeakZ + 7.5]);
   ctx.strokeStyle = '#FFFFFF';
-  ctx.lineWidth = 1.2;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(spBaseX, spBaseY);
   ctx.lineTo(spTopX, spTopY);
   ctx.stroke();
 
   const orbBlink = (Math.sin(time * 5 + seed) + 1) / 2;
-  ctx.fillStyle = night ? `rgba(255, 215, 0, ${0.45 + orbBlink * 0.55})` : '#F5A623';
+  ctx.fillStyle = night ? p.roofLight : brandColor;
   ctx.beginPath();
-  ctx.arc(spTopX, spTopY, 2.0 + (night ? orbBlink * 0.8 : 0), 0, Math.PI * 2);
+  ctx.arc(spTopX, spTopY, 2.4 + orbBlink * 1.1, 0, Math.PI * 2);
   ctx.fill();
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath();
+  ctx.arc(spTopX, spTopY, 1.1, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/**
+ * TIER 4 STORE: 3D Mega-Commerce Arcology Tower & Helipad Plaza matching Design A.
+ * Features:
+ * - 2-story commercial galleria podium spanning the 2x2 lot
+ * - East Wing elevated VIP Helipad deck with illuminated "H" landing circle & perimeter beacon lights
+ * - West/Center Wing soaring 8-story (h = 44) brand-tinted diagrid corporate skyscraper
+ * - Illuminated neon vertical fins, holographic sky-crown, and twin pulsing aviation beacons
+ */
+export function dioramaMegaCommerceTower(
+  ctx: CanvasRenderingContext2D,
+  p: ArtPalette,
+  night: boolean,
+  seed = 0,
+  time = 0,
+  optionsOrNorth: boolean | DestinationArtOptions = false,
+  criticalDanger = false
+) {
+  const opts = parseDestOptions(optionsOrNorth, criticalDanger);
+  const win = windowColors(night);
+
+  const dangerTint = opts.criticalDanger ? ((Math.sin(time * 9) + 1) / 2) * 0.42 : 0;
+  const brandColor = dangerTint > 0 ? mix(p.main, '#FF3B30', dangerTint) : p.main;
+
+  const bw = 68, bd = 28, podH = 12.5;
+  const bx = -bw / 2;
+  const by = opts.offsetY - bd / 2;
+
+  // 1. Dramatic Skyscraper Ground Shadow
+  groundShadow(ctx, bx - 2, by - 2, bw + 4, bd + 4, 42, 'rgba(10, 14, 26, 0.38)');
+
+  // 2. Commercial Galleria Podium (z = 0..podH)
+  const podSouth = mix(p.main, '#FFFFFF', 0.65);
+  const podEast = mix(p.main, '#64748B', 0.45);
+  box(ctx, bx, by, bw, bd, 0, podH, {
+    top: mix(p.roofDark, '#1E293B', 0.4),
+    south: podSouth,
+    east: podEast,
+    edge: 'rgba(255, 255, 255, 0.25)',
+  });
+
+  // Glowing podium cornice belt
+  box(ctx, bx - 0.8, by - 0.8, bw + 1.6, bd + 1.6, podH, 1.5, {
+    top: p.roofLight,
+    south: brandColor,
+    east: p.roofDark,
+    edge: '#FFFFFF',
+  });
+
+  // Podium ground-floor grand glass atrium
+  southWindow(ctx, by + bd, bx + 3, 0.8, bw - 6, podH - 2.2, night ? '#FFE28A' : 'rgba(190, 230, 255, 0.92)');
+  box(ctx, bx + 4, by + bd, bw - 8, 4.2, 9.2, 1.4, {
+    top: p.roofLight,
+    south: brandColor,
+    east: p.roofDark,
+  });
+
+  // 3. East Wing Rooftop VIP Helipad Deck (x = 7..31, z = podH + 1.5)
+  const heliZ = podH + 1.55;
+  const [hx, hy] = proj([19, by + bd * 0.5, heliZ]);
+  ctx.save();
+  ctx.fillStyle = '#1E293B';
+  ctx.beginPath();
+  ctx.ellipse(hx, hy, 10.5, 10.5 * DY, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = night ? p.roofLight : '#FACC15';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  // "H" marking on helipad
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '800 7px "Plus Jakarta Sans", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('H', hx, hy + 0.5);
+  ctx.restore();
+
+  // 4. West/Center Wing Soaring 8-Story Corporate Arcology Skyscraper (x = -30..6, w = 36, d = 22)
+  const tx = -30, tw = 36;
+  const ty = by + 3, td = 22;
+  const tz0 = podH + 1.5;
+  const th = 27.5; // Reaches z = 41.5!
+
+  const glassSouth = night ? mix(brandColor, '#253858', 0.45) : mix(brandColor, '#E0F2FE', 0.42);
+  const glassEast = night ? mix(p.roofDark, '#17233B', 0.52) : mix(p.roofDark, '#94A3B8', 0.35);
+  box(ctx, tx, ty, tw, td, tz0, th, {
+    top: p.roofLight,
+    south: glassSouth,
+    east: glassEast,
+    edge: p.roofLight,
+  });
+
+  // 6 Floors of Illuminated Curtain-Wall Ribbon Windows
+  const floors = 6;
+  for (let f = 0; f < floors; f++) {
+    const fz = tz0 + 1.2 + f * 4.2;
+    for (let c = 0; c < 4; c++) {
+      const lit = !night || hashRand(seed, f * 13 + c * 5) > 0.18;
+      const winCol = lit ? (night ? '#FFE694' : 'rgba(235, 250, 255, 0.94)') : win.dark;
+      southWindow(ctx, ty + td, tx + 2.2 + c * 8.2, fz, 6.8, 2.8, winCol);
+    }
+    for (let c = 0; c < 2; c++) {
+      const lit = !night || hashRand(seed, f * 17 + c * 9 + 3) > 0.22;
+      const winCol = lit ? (night ? win.litDim : 'rgba(205, 232, 250, 0.88)') : win.dark;
+      eastWindow(ctx, tx + tw, ty + 2.5 + c * 9.0, fz, 7.2, 2.8, winCol);
+    }
+  }
+
+  // Exterior Diagrid Structural Bracing & Neon Vertical Mullions
+  ctx.save();
+  ctx.strokeStyle = night ? p.roofLight : '#FFFFFF';
+  ctx.lineWidth = 1.2;
+  const [dA0x, dA0y] = proj([tx + 1, ty + td + 0.12, tz0]);
+  const [dA1x, dA1y] = proj([tx + tw * 0.5, ty + td + 0.12, tz0 + th * 0.5]);
+  const [dA2x, dA2y] = proj([tx + tw - 1, ty + td + 0.12, tz0]);
+  const [dA3x, dA3y] = proj([tx + 1, ty + td + 0.12, tz0 + th]);
+  const [dA4x, dA4y] = proj([tx + tw - 1, ty + td + 0.12, tz0 + th]);
+  ctx.beginPath();
+  ctx.moveTo(dA0x, dA0y);
+  ctx.lineTo(dA1x, dA1y);
+  ctx.lineTo(dA4x, dA4y);
+  ctx.moveTo(dA2x, dA2y);
+  ctx.lineTo(dA1x, dA1y);
+  ctx.lineTo(dA3x, dA3y);
+  ctx.stroke();
+  ctx.restore();
+
+  // 5. Illuminated Sky-Crown Penthouse & Twin Spires (z = 41.5..48)
+  const cz = tz0 + th;
+  box(ctx, tx - 0.8, ty - 0.8, tw + 1.6, td + 1.6, cz, 1.8, {
+    top: '#FFFFFF',
+    south: p.roofLight,
+    east: brandColor,
+  });
+  box(ctx, tx + 5, ty + 4, tw - 10, td - 8, cz + 1.8, 5.2, {
+    top: '#FFFFFF',
+    south: brandColor,
+    east: p.roofDark,
+    edge: '#FFFFFF',
+  });
+
+  // Twin Sky-Spires with Synchronized Blinking Beacons
+  const blink = (Math.sin(time * 5 + seed) + 1) / 2;
+  for (const spX of [tx + 10, tx + tw - 10]) {
+    const [sbX, sbY] = proj([spX, ty + td * 0.5, cz + 7.0]);
+    const [stX, stY] = proj([spX, ty + td * 0.5, cz + 16.5]);
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(sbX, sbY);
+    ctx.lineTo(stX, stY);
+    ctx.stroke();
+
+    ctx.fillStyle = `rgba(255, 59, 48, ${0.5 + blink * 0.5})`;
+    ctx.beginPath();
+    ctx.arc(stX, stY, 2.2 + blink * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 /**
@@ -1153,10 +1452,15 @@ export function dioramaTrainStation(
 
 /**
  * Public entry point for rendering Design A commercial and transit destinations.
+ * Supports 4-stage visual progression for commercial stores:
+ * Tier 1 = Corner Market / Superstore
+ * Tier 2 = Multi-Story Department Galleria
+ * Tier 3 = Geodesic Rotunda Exchange Hub
+ * Tier 4 = Mega-Commerce Arcology Skyscraper & Helipad Plaza
  */
 export function drawDestination(
   ctx: CanvasRenderingContext2D,
-  type: 'store' | 'circular' | 'station',
+  type: 'store' | 'galleria' | 'circular' | 'megatower' | 'station',
   palette: ArtPalette,
   night: boolean,
   seed = 0,
@@ -1166,12 +1470,17 @@ export function drawDestination(
 ) {
   ctx.save();
   ctx.lineJoin = 'round';
-  if (type === 'store') {
-    dioramaStore(ctx, palette, night, seed, time, options, critical);
-  } else if (type === 'circular') {
-    dioramaCircularHub(ctx, palette, night, seed, time, options, critical);
-  } else {
+  const parsed = parseDestOptions(options, critical);
+  if (type === 'station') {
     dioramaTrainStation(ctx, palette, night, seed, time, options);
+  } else if (type === 'megatower' || parsed.tier === 4) {
+    dioramaMegaCommerceTower(ctx, palette, night, seed, time, options, critical);
+  } else if (type === 'circular' || parsed.tier === 3) {
+    dioramaCircularHub(ctx, palette, night, seed, time, options, critical);
+  } else if (type === 'galleria' || parsed.tier === 2) {
+    dioramaDepartmentGalleria(ctx, palette, night, seed, time, options, critical);
+  } else {
+    dioramaStore(ctx, palette, night, seed, time, options, critical);
   }
   ctx.restore();
 }
