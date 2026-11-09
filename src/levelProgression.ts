@@ -658,9 +658,12 @@ export class LevelProgression {
       spawnedMilestoneToday = true;
     }
 
-    // 1. Periodic Store Upgrades (promotes Tier 1 -> Tier 2 -> Tier 3 -> Tier 4 in a balanced pyramid)
+    // 1. Periodic Store & Train Station Upgrades
     if (day >= 7 && (day - 7) % 3 === 0) {
       this.upgradeExistingStore(undefined, false, day >= 19 ? 4 : day >= 12 ? 3 : 2);
+    }
+    if (day === 9 || day === 18 || day === 28) {
+      this.upgradeTrainStation(false);
     }
 
     // 1b. Continuous Residential Pyramid Upgrades (maintains ~45% Houses, ~35% Apartments, ~20% Skyscrapers)
@@ -1145,6 +1148,9 @@ export class LevelProgression {
           upgradedCount++;
         }
       }
+      if (this.upgradeTrainStation(true)) {
+        upgradedCount++;
+      }
       // Also seed fresh urban expansion if the city has room for more stores/suburbs
       const nonStationStores = this.destinations.filter((d) => !d.isTrainStation).length;
       if (this.currentDay >= 12 && nonStationStores < 28) {
@@ -1169,6 +1175,38 @@ export class LevelProgression {
       }
     }
     return upgradedCount;
+  }
+
+  /**
+   * Advances the Central Train Station through its 4 architectural & capacity tiers:
+   * Tier 1: Regional Commuter Depot -> Tier 2: Metro Concourse Terminal ->
+   * Tier 3: Grand Central Vaulted Exchange -> Tier 4: Hyper-Rail Sky-Hub & Transit Arcology
+   */
+  public upgradeTrainStation(silent: boolean = false): Destination | null {
+    const station = this.destinations.find((d) => d.isTrainStation);
+    if (!station) return null;
+
+    const currentTier = station.tier || 1;
+    if (currentTier >= 4) return null;
+
+    const nextTier = (currentTier + 1) as 2 | 3 | 4;
+    station.tier = nextTier;
+    station.spawnAnimation = 0.25;
+    station.maxPins = CONFIG.GAMEPLAY.MAX_PINS_PER_DESTINATION + nextTier;
+    station.spawnInterval = Math.max(2.1, station.spawnInterval * 0.92);
+
+    if (!silent) {
+      sound.playMotorwayPlacement();
+      if (this.onToast) {
+        const stationNames: Record<2 | 3 | 4, string> = {
+          2: '🚆 Tier II Metro Concourse Terminal',
+          3: '🏛️ Tier III Grand Central Vaulted Exchange',
+          4: '🚄 Tier IV Hyper-Rail Sky-Hub & Transit Tower',
+        };
+        this.onToast(`Central Station upgraded into a ${stationNames[nextTier]}!`);
+      }
+    }
+    return station;
   }
 
   /**

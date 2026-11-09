@@ -607,24 +607,34 @@ export class GameRenderer {
       this.ctx.fill();
     }
 
-    // Terminal Station Identifier Badge
-    const badgeW = 76;
+    // Terminal Station Identifier Badge (scales with Train Station Tier!)
+    const stationDest = this.level.destinations.find((d) => d.isTrainStation);
+    const stationTier = stationDest?.tier || 1;
+    const badgeW = stationTier === 4 ? 92 : 82;
     const badgeH = 14;
     const badgeX = stX + stW / 2 - badgeW / 2;
     const badgeY = platTopY + platH - 5;
-    this.ctx.fillStyle = '#1E293B';
+    this.ctx.fillStyle = '#0F172A';
     this.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
     this.ctx.fill();
-    this.ctx.strokeStyle = '#38BDF8';
-    this.ctx.lineWidth = 1;
+    this.ctx.strokeStyle = stationTier === 4 ? '#FACC15' : '#38BDF8';
+    this.ctx.lineWidth = stationTier >= 3 ? 1.5 : 1.0;
     this.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
     this.ctx.stroke();
 
-    this.ctx.fillStyle = '#FFFFFF';
-    this.ctx.font = '800 8.5px "Plus Jakarta Sans", sans-serif';
+    const platLabel =
+      stationTier === 4
+        ? '🚄 HYPER-RAIL IV★'
+        : stationTier === 3
+          ? '🚆 CENTRAL III'
+          : stationTier === 2
+            ? '🚆 METRO II'
+            : '🚆 TERMINAL I';
+    this.ctx.fillStyle = stationTier === 4 ? '#FDE047' : '#FFFFFF';
+    this.ctx.font = '800 8px "Plus Jakarta Sans", sans-serif';
     this.ctx.textAlign = 'center';
     this.ctx.textBaseline = 'middle';
-    this.ctx.fillText('🚆 TERMINAL', stX + stW / 2, badgeY + badgeH / 2);
+    this.ctx.fillText(platLabel, stX + stW / 2, badgeY + badgeH / 2);
 
     this.ctx.restore();
   }
@@ -2270,7 +2280,13 @@ export class GameRenderer {
               : 'store';
       const destSeed = (dest.x * 47 + dest.y * 23) % 1000;
       const tierVisualScale = dest.isTrainStation
-        ? 1.04
+        ? storeTier === 4
+          ? 1.16
+          : storeTier === 3
+            ? 1.11
+            : storeTier === 2
+              ? 1.07
+              : 1.04
         : storeTier === 4
           ? 1.16
           : storeTier === 3
@@ -2297,8 +2313,8 @@ export class GameRenderer {
       );
       this.ctx.restore();
 
-      // 4. Commercial Progression Tier Emblem & Next-Tier Progress Bar (Bottom Corner of Lot)
-      if (!dest.isTrainStation) {
+      // 4. Commercial & Transit Progression Tier Emblem & Next-Tier Progress Bar (Bottom Corner of Lot)
+      {
         const badgeX = -halfW + 16;
         const badgeY = halfH - 9;
         const serviced = dest.servicedCount || 0;

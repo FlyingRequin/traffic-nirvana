@@ -1194,26 +1194,28 @@ export function dioramaTrainStation(
   optionsOrNorth: boolean | DestinationArtOptions = false
 ) {
   const opts = parseDestOptions(optionsOrNorth, false);
+  const stationTier: 1 | 2 | 3 | 4 = opts.tier || 1;
   const win = windowColors(night);
 
   const cy = opts.offsetY;
 
-  // 1. Concrete Trackside Passenger Platform along North edge
-  const platX = -36, platW = 72;
-  const platY = cy - 20, platD = 7.5;
-  const platH = 2.4;
+  // 1. Concrete Trackside Passenger Platform along North edge (expands & adds glass canopy at Tier 2+)
+  const platX = -37, platW = 74;
+  const platY = cy - 20, platD = 8.0;
+  const platH = 2.6;
 
-  groundShadow(ctx, platX, platY, platW, platD, platH + 1, 'rgba(20, 22, 35, 0.2)');
+  groundShadow(ctx, platX, platY, platW, platD, platH + 2, 'rgba(20, 22, 35, 0.24)');
 
   box(ctx, platX, platY, platW, platD, 0, platH, {
-    top: '#94A3B8',
+    top: stationTier >= 3 ? '#CBD5E1' : '#94A3B8',
     south: '#64748B',
     east: '#475569',
   });
 
+  // High-visibility safety stripe (Gold at Tier 1-2, Neon Cyan/Gold Maglev trim at Tier 3-4)
   ctx.save();
-  ctx.strokeStyle = '#F4B924';
-  ctx.lineWidth = 1.8;
+  ctx.strokeStyle = stationTier === 4 ? '#38BDF8' : '#F4B924';
+  ctx.lineWidth = 2.0;
   ctx.setLineDash([4, 3]);
   const [tPt0x, tPt0y] = proj([platX + 2, platY + 0.8, platH + 0.05]);
   const [tPt1x, tPt1y] = proj([platX + platW - 2, platY + 0.8, platH + 0.05]);
@@ -1224,18 +1226,38 @@ export function dioramaTrainStation(
   ctx.setLineDash([]);
   ctx.restore();
 
-  // Platform Shelters & Posts
-  for (const sx of [-22, 18]) {
-    box(ctx, sx, platY + 1.2, 10, 4.5, platH + 3.2, 0.6, {
-      top: '#334155',
-      south: '#1E293B',
-      east: '#0F172A',
+  // Platform Shelters (Tier 1: 2 shelters; Tier 2+: continuous full-span illuminated glass concourse canopy!)
+  if (stationTier === 1) {
+    for (const sx of [-22, 18]) {
+      box(ctx, sx, platY + 1.2, 11, 4.5, platH + 3.4, 0.7, {
+        top: '#334155',
+        south: '#1E293B',
+        east: '#0F172A',
+      });
+      for (const px of [sx + 1.2, sx + 9.8]) {
+        const [pbX, pbY] = proj([px, platY + 3.5, platH]);
+        const [ptX, ptY] = proj([px, platY + 3.5, platH + 3.4]);
+        ctx.strokeStyle = '#CBD5E1';
+        ctx.lineWidth = 0.9;
+        ctx.beginPath();
+        ctx.moveTo(pbX, pbY);
+        ctx.lineTo(ptX, ptY);
+        ctx.stroke();
+      }
+    }
+  } else {
+    // Full-span cantilevered glass-and-steel platform canopy
+    box(ctx, platX + 4, platY + 1.0, platW - 8, 5.2, platH + 4.2, 1.0, {
+      top: stationTier >= 3 ? p.roofLight : '#38BDF8',
+      south: p.main,
+      east: p.roofDark,
+      edge: '#FFFFFF',
     });
-    for (const px of [sx + 1.2, sx + 8.8]) {
+    for (const px of [-28, -10, 10, 28]) {
       const [pbX, pbY] = proj([px, platY + 3.5, platH]);
-      const [ptX, ptY] = proj([px, platY + 3.5, platH + 3.2]);
-      ctx.strokeStyle = '#CBD5E1';
-      ctx.lineWidth = 0.8;
+      const [ptX, ptY] = proj([px, platY + 3.5, platH + 4.2]);
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 1.1;
       ctx.beginPath();
       ctx.moveTo(pbX, pbY);
       ctx.lineTo(ptX, ptY);
@@ -1243,24 +1265,33 @@ export function dioramaTrainStation(
     }
   }
 
-  // 2. Main Train Shed & Concourse Hall
-  const shedX = -26, shedW = 60;
+  // 2. Main Train Shed & Concourse Hall (scales in height & grandeur with stationTier!)
+  const shedX = -26, shedW = stationTier >= 3 ? 52 : 60;
   const shedY = cy - 12.5, shedD = 24;
-  const shedWallH = 10.5;
+  const shedWallH = stationTier === 4 ? 14.5 : stationTier === 3 ? 13.5 : stationTier === 2 ? 12.0 : 10.5;
 
-  groundShadow(ctx, shedX - 1, shedY, shedW + 2, shedD, shedWallH + 6, 'rgba(20, 22, 35, 0.25)');
+  groundShadow(ctx, shedX - 2, shedY, shedW + 4, shedD, shedWallH + 8, 'rgba(20, 22, 35, 0.28)');
 
-  const wallTone = mix(p.main, '#FFFFFF', 0.8);
-  const wallEast = mix(p.main, '#8892A0', 0.52);
+  const wallTone = mix(p.main, '#FFFFFF', 0.76);
+  const wallEast = mix(p.main, '#8892A0', 0.48);
   box(ctx, shedX, shedY, shedW, shedD, 0, shedWallH, {
     top: '#334155',
     south: wallTone,
     east: wallEast,
   });
 
+  // Cornice belt on Tier 2+ concourse walls
+  if (stationTier >= 2) {
+    box(ctx, shedX - 0.6, shedY - 0.4, shedW + 1.2, shedD + 0.8, shedWallH - 0.9, 1.1, {
+      top: p.roofLight,
+      south: stationTier === 4 ? '#FACC15' : p.main,
+      east: p.roofDark,
+    });
+  }
+
   // 3. Arched Barrel Vault Roof
-  const archSteps = 7;
-  const archRise = 7.5;
+  const archSteps = 8;
+  const archRise = stationTier >= 3 ? 9.2 : stationTier === 2 ? 8.4 : 7.5;
   const ym = shedY + shedD / 2;
   const halfD = shedD / 2;
 
@@ -1277,7 +1308,7 @@ export function dioramaTrainStation(
 
     const midY = (y0 + y1) / 2;
     const ny = (midY - ym) / halfD;
-    const shade = Math.max(0, Math.min(1, 0.6 - ny * 0.45));
+    const shade = Math.max(0, Math.min(1, 0.62 - ny * 0.45));
     const panelColor = mix(p.roofDark, p.roofLight, shade);
 
     poly(ctx, [
@@ -1304,18 +1335,21 @@ export function dioramaTrainStation(
     eastWinPts.push([shedX + shedW + 0.05, yVal, getArchZ(yVal) - 1.2]);
   }
   eastWinPts.push([shedX + shedW + 0.05, shedY + shedD - 3, shedWallH + 1]);
-  poly(ctx, eastWinPts, night ? '#FFE9A8' : 'rgba(210, 235, 255, 0.9)');
+  poly(ctx, eastWinPts, night ? '#FFE9A8' : 'rgba(210, 235, 255, 0.92)');
 
   // 4. Transverse Glass Skylight Ribs across the arched roof
-  const skylightWidth = 4.2;
-  const skylightXs = [shedX + 11, shedX + 28, shedX + 45];
+  const skylightWidth = stationTier >= 3 ? 4.8 : 4.2;
+  const skylightXs =
+    stationTier >= 3
+      ? [shedX + 6, shedX + 18, shedX + 30, shedX + 41]
+      : [shedX + 11, shedX + 28, shedX + 45];
 
   for (const skX of skylightXs) {
     for (let s = 0; s < archSteps; s++) {
       const y0 = shedY + (s / archSteps) * shedD;
       const y1 = shedY + ((s + 1) / archSteps) * shedD;
-      const z0 = getArchZ(y0) + 0.05;
-      const z1 = getArchZ(y1) + 0.05;
+      const z0 = getArchZ(y0) + 0.06;
+      const z1 = getArchZ(y1) + 0.06;
 
       const glassRib = night ? '#FFE28A' : 'rgba(230, 245, 255, 0.95)';
       poly(ctx, [
@@ -1323,131 +1357,255 @@ export function dioramaTrainStation(
         [skX + skylightWidth, y0, z0],
         [skX + skylightWidth, y1, z1],
         [skX, y1, z1],
-      ], glassRib, 'rgba(255, 255, 255, 0.4)', 0.5);
+      ], glassRib, stationTier >= 3 ? '#FACC15' : 'rgba(255, 255, 255, 0.45)', 0.65);
     }
+  }
+
+  // Tier 3+: Central Grand Rotunda Skylight Cupola atop the barrel vault!
+  if (stationTier === 3) {
+    const cupZ = shedWallH + archRise - 0.5;
+    const [cupX, cupY] = proj([shedX + shedW * 0.5, ym, cupZ]);
+    ctx.save();
+    ctx.fillStyle = night ? '#FDE047' : p.roofLight;
+    ctx.beginPath();
+    ctx.ellipse(cupX, cupY, 10, 6.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+    ctx.restore();
   }
 
   // 5. South Concourse Facade & Passenger Entrance Portals
   const entY = shedY + shedD;
-  for (let i = 0; i < 3; i++) {
-    const ax = shedX + 8 + i * 16;
-    const lit = !night || hashRand(seed, i * 7) > 0.25;
-    southWindow(ctx, entY, ax, 0.6, 10, 7.2, lit ? (night ? '#FFE28A' : 'rgba(185, 220, 245, 0.9)') : win.dark);
-    poly(ctx, [[ax - 0.5, entY + 0.08, 7.2], [ax + 10.5, entY + 0.08, 7.2], [ax + 10.5, entY + 0.08, 8.2], [ax - 0.5, entY + 0.08, 8.2]], p.main);
+  const bayCount = 3;
+  const baySpacing = (shedW - 12) / bayCount;
+  for (let i = 0; i < bayCount; i++) {
+    const ax = shedX + 6 + i * baySpacing;
+    const lit = !night || hashRand(seed, i * 7) > 0.2;
+    southWindow(ctx, entY, ax, 0.6, baySpacing - 3.5, 7.2, lit ? (night ? '#FFE28A' : 'rgba(185, 220, 245, 0.92)') : win.dark);
+    poly(
+      ctx,
+      [
+        [ax - 0.4, entY + 0.08, 7.2],
+        [ax + baySpacing - 3.1, entY + 0.08, 7.2],
+        [ax + baySpacing - 3.1, entY + 0.08, 8.2],
+        [ax - 0.4, entY + 0.08, 8.2],
+      ],
+      p.main
+    );
+    // Upper Mezzanine Clerestory Windows for Tier 2+
+    if (stationTier >= 2) {
+      southWindow(
+        ctx,
+        entY,
+        ax + 0.5,
+        9.2,
+        baySpacing - 4.5,
+        2.2,
+        night ? '#FFF3B0' : 'rgba(220, 242, 255, 0.95)'
+      );
+    }
   }
 
-  // Cantilevered Iron Passenger Entrance Canopy
-  box(ctx, shedX + 4, entY, shedW - 8, 3.5, 7.8, 1.0, {
-    top: p.main,
+  // Cantilevered Iron/Gold Passenger Entrance Canopy
+  box(ctx, shedX + 3, entY, shedW - 6, 4.0, 7.8, 1.2, {
+    top: stationTier === 4 ? '#FACC15' : p.main,
     south: p.roofDark,
     east: p.wall,
   });
 
-  // Illuminated "RAIL" Transit Badge
-  box(ctx, shedX + shedW / 2 - 11, entY + 0.3, 22, 0.8, 9.4, 2.5, {
-    top: '#1E293B',
+  // Illuminated Tier-Specific Transit Marquee Badge
+  const marqueeText =
+    stationTier === 4
+      ? '★ HYPER-RAIL IV'
+      : stationTier === 3
+        ? 'CENTRAL III'
+        : stationTier === 2
+          ? 'METRO II'
+          : 'RAIL';
+  const marqueeW = stationTier === 4 ? 36 : stationTier >= 2 ? 30 : 22;
+  const marqueeZ = shedWallH - 0.8;
+  box(ctx, shedX + shedW / 2 - marqueeW / 2, entY + 0.3, marqueeW, 1.0, marqueeZ, 2.8, {
+    top: stationTier === 4 ? '#FACC15' : '#1E293B',
     south: '#0F172A',
     east: '#000000',
+    edge: stationTier === 4 ? '#FDE047' : stationTier >= 2 ? p.roofLight : undefined,
   });
-  const [badgeX, badgeY] = proj([shedX + shedW / 2, entY + 1.1, 10.6]);
-  ctx.fillStyle = '#FFFFFF';
+  const [badgeX, badgeY] = proj([shedX + shedW / 2, entY + 1.3, marqueeZ + 1.4]);
+  ctx.fillStyle = stationTier === 4 ? '#FDE047' : '#FFFFFF';
   ctx.font = '800 6px "Plus Jakarta Sans", sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('RAIL', badgeX, badgeY);
+  ctx.fillText(marqueeText, badgeX, badgeY);
 
-  // 6. Integrated Multi-Tier Clock Tower (West Wing)
-  const twX = -35, twW = 9;
-  const twY = cy - 1, twD = 9;
-  const twShaftH = 17;
-  const twChamberH = 6.5;
-  const twSpireH = 5.5;
+  // Helper to render a Railway Clock Tower at a given X
+  const renderClockTower = (twX: number, twShaftH: number) => {
+    const twW = 9.5;
+    const twY = cy - 1, twD = 9.5;
+    const twChamberH = 6.8;
+    const twSpireH = stationTier >= 3 ? 7.2 : 5.5;
 
-  groundShadow(ctx, twX - 1, twY - 1, twW + 2, twD + 2, twShaftH + twChamberH + twSpireH, 'rgba(20, 22, 35, 0.28)');
+    groundShadow(ctx, twX - 1, twY - 1, twW + 2, twD + 2, twShaftH + twChamberH + twSpireH, 'rgba(20, 22, 35, 0.28)');
 
-  const twWallSouth = mix(p.main, '#FFFFFF', 0.75);
-  const twWallEast = mix(p.main, '#828C9A', 0.5);
-  box(ctx, twX, twY, twW, twD, 0, twShaftH, {
-    top: p.roofDark,
-    south: twWallSouth,
-    east: twWallEast,
-  });
-  southWindow(ctx, twY + twD, twX + 3.5, 4, 2, 7, win.litDim);
-  eastWindow(ctx, twX + twW, twY + 3.5, 4, 2, 7, win.litDim);
+    const twWallSouth = mix(p.main, '#FFFFFF', 0.72);
+    const twWallEast = mix(p.main, '#828C9A', 0.48);
+    box(ctx, twX, twY, twW, twD, 0, twShaftH, {
+      top: p.roofDark,
+      south: twWallSouth,
+      east: twWallEast,
+    });
+    southWindow(ctx, twY + twD, twX + 3.5, 4, 2.5, twShaftH - 7, win.litDim);
+    eastWindow(ctx, twX + twW, twY + 3.5, 4, 2.5, twShaftH - 7, win.litDim);
 
-  // Corbelled Cornice Ledge below clock chamber
-  box(ctx, twX - 0.6, twY - 0.6, twW + 1.2, twD + 1.2, twShaftH, 1.0, {
-    top: p.roofLight,
-    south: p.main,
-    east: p.roofDark,
-  });
+    // Corbelled Cornice Ledge below clock chamber
+    box(ctx, twX - 0.7, twY - 0.7, twW + 1.4, twD + 1.4, twShaftH, 1.1, {
+      top: p.roofLight,
+      south: stationTier >= 3 ? '#FACC15' : p.main,
+      east: p.roofDark,
+    });
 
-  // Clock Chamber
-  const cz0 = twShaftH + 1.0;
-  box(ctx, twX, twY, twW, twD, cz0, twChamberH, {
-    top: p.roofDark,
-    south: twWallSouth,
-    east: twWallEast,
-  });
+    // Clock Chamber
+    const cz0 = twShaftH + 1.1;
+    box(ctx, twX, twY, twW, twD, cz0, twChamberH, {
+      top: p.roofDark,
+      south: twWallSouth,
+      east: twWallEast,
+    });
 
-  // Illuminated Railway Clock Face on South Facade
-  const [clockSx, clockSy] = proj([twX + twW / 2, twY + twD + 0.08, cz0 + twChamberH / 2]);
-  ctx.fillStyle = '#1E293B';
-  ctx.beginPath();
-  ctx.arc(clockSx, clockSy, 3.6, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = night ? '#FFFBE6' : '#FFFFFF';
-  ctx.beginPath();
-  ctx.arc(clockSx, clockSy, 2.9, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#1E293B';
-  ctx.lineWidth = 0.7;
-  ctx.beginPath();
-  ctx.moveTo(clockSx, clockSy);
-  const minAng = time * 0.5;
-  const hrAng = time * 0.04 + 1.2;
-  ctx.lineTo(clockSx + Math.cos(minAng) * 2.0, clockSy + Math.sin(minAng) * 2.0);
-  ctx.moveTo(clockSx, clockSy);
-  ctx.lineTo(clockSx + Math.cos(hrAng) * 1.4, clockSy + Math.sin(hrAng) * 1.4);
-  ctx.stroke();
+    // Illuminated Railway Clock Face on South Facade
+    const [clockSx, clockSy] = proj([twX + twW / 2, twY + twD + 0.08, cz0 + twChamberH / 2]);
+    ctx.fillStyle = stationTier >= 3 ? '#FACC15' : '#1E293B';
+    ctx.beginPath();
+    ctx.arc(clockSx, clockSy, 3.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = night ? '#FFFBE6' : '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(clockSx, clockSy, 2.9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#1E293B';
+    ctx.lineWidth = 0.75;
+    ctx.beginPath();
+    ctx.moveTo(clockSx, clockSy);
+    const minAng = time * 0.5;
+    const hrAng = time * 0.04 + 1.2;
+    ctx.lineTo(clockSx + Math.cos(minAng) * 2.0, clockSy + Math.sin(minAng) * 2.0);
+    ctx.moveTo(clockSx, clockSy);
+    ctx.lineTo(clockSx + Math.cos(hrAng) * 1.4, clockSy + Math.sin(hrAng) * 1.4);
+    ctx.stroke();
 
-  // Second Clock Face on East Facade
-  const [clockEx, clockEy] = proj([twX + twW + 0.08, twY + twD / 2, cz0 + twChamberH / 2]);
-  ctx.fillStyle = '#1E293B';
-  ctx.beginPath();
-  ctx.ellipse(clockEx, clockEy, 2.0, 3.2, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = night ? '#FFFBE6' : '#FFFFFF';
-  ctx.beginPath();
-  ctx.ellipse(clockEx, clockEy, 1.5, 2.6, 0, 0, Math.PI * 2);
-  ctx.fill();
+    // Second Clock Face on East Facade
+    const [clockEx, clockEy] = proj([twX + twW + 0.08, twY + twD / 2, cz0 + twChamberH / 2]);
+    ctx.fillStyle = stationTier >= 3 ? '#FACC15' : '#1E293B';
+    ctx.beginPath();
+    ctx.ellipse(clockEx, clockEy, 2.0, 3.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = night ? '#FFFBE6' : '#FFFFFF';
+    ctx.beginPath();
+    ctx.ellipse(clockEx, clockEy, 1.5, 2.6, 0, 0, Math.PI * 2);
+    ctx.fill();
 
-  // Pyramidal Copper/Slate Roof Spire
-  const spZ0 = cz0 + twChamberH;
-  const spPeakZ = spZ0 + twSpireH;
-  const spMidX = twX + twW / 2;
-  const spMidY = twY + twD / 2;
+    // Pyramidal Copper/Gold Roof Spire
+    const spZ0 = cz0 + twChamberH;
+    const spPeakZ = spZ0 + twSpireH;
+    const spMidX = twX + twW / 2;
+    const spMidY = twY + twD / 2;
 
-  poly(ctx, [[twX, twY + twD, spZ0], [twX + twW, twY + twD, spZ0], [spMidX, spMidY, spPeakZ]], p.main);
-  poly(ctx, [[twX + twW, twY, spZ0], [twX + twW, twY + twD, spZ0], [spMidX, spMidY, spPeakZ]], p.roofDark);
-  poly(ctx, [[twX, twY, spZ0], [twX + twW, twY, spZ0], [spMidX, spMidY, spPeakZ]], p.roofLight);
+    poly(ctx, [[twX, twY + twD, spZ0], [twX + twW, twY + twD, spZ0], [spMidX, spMidY, spPeakZ]], p.main);
+    poly(ctx, [[twX + twW, twY, spZ0], [twX + twW, twY + twD, spZ0], [spMidX, spMidY, spPeakZ]], p.roofDark);
+    poly(ctx, [[twX, twY, spZ0], [twX + twW, twY, spZ0], [spMidX, spMidY, spPeakZ]], p.roofLight);
 
-  // Weather Vane / Finial Spire
-  const [finBotX, finBotY] = proj([spMidX, spMidY, spPeakZ]);
-  const [finTopX, finTopY] = proj([spMidX, spMidY, spPeakZ + 3.8]);
-  ctx.strokeStyle = '#F4B924';
-  ctx.lineWidth = 1.0;
-  ctx.beginPath();
-  ctx.moveTo(finBotX, finBotY);
-  ctx.lineTo(finTopX, finTopY);
-  ctx.stroke();
-  ctx.fillStyle = '#F4B924';
-  ctx.beginPath();
-  ctx.moveTo(finTopX, finTopY);
-  ctx.lineTo(finTopX + 3.5, finTopY + 1.2);
-  ctx.lineTo(finTopX, finTopY + 2.4);
-  ctx.closePath();
-  ctx.fill();
+    // Weather Vane / Finial Beacon
+    const [finBotX, finBotY] = proj([spMidX, spMidY, spPeakZ]);
+    const [finTopX, finTopY] = proj([spMidX, spMidY, spPeakZ + 4.2]);
+    ctx.strokeStyle = '#F4B924';
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(finBotX, finBotY);
+    ctx.lineTo(finTopX, finTopY);
+    ctx.stroke();
+    ctx.fillStyle = '#F4B924';
+    ctx.beginPath();
+    ctx.arc(finTopX, finTopY, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  // 6. Tiered Wings:
+  // Tier 1: Single West Clock Tower (h = 17)
+  // Tier 2: Taller West Clock Tower (h = 21)
+  // Tier 3: Symmetrical Twin Grand Central Clock Towers (West + East, h = 24)
+  // Tier 4: Soaring High-Speed Rail Transit Skyscraper (West) + VIP Helipad Deck & Clock Tower (East)!
+  if (stationTier <= 2) {
+    renderClockTower(-35.5, stationTier === 2 ? 21 : 17);
+  } else if (stationTier === 3) {
+    renderClockTower(-35.5, 24);
+    renderClockTower(26.5, 24);
+  } else {
+    // Tier 4: East Wing Rooftop VIP Air-Rail Helipad + West Wing Soaring Bullet-Rail Control Skyscraper!
+    const heliZ = shedWallH + 1.2;
+    box(ctx, 24, cy - 10, 14, 20, 0, heliZ, {
+      top: '#1E293B',
+      south: wallTone,
+      east: wallEast,
+      edge: '#FACC15',
+    });
+    const [hx, hy] = proj([31, cy, heliZ + 0.1]);
+    ctx.save();
+    ctx.fillStyle = '#0F172A';
+    ctx.beginPath();
+    ctx.ellipse(hx, hy, 8.2, 8.2 * DY, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#FACC15';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.fillStyle = '#FDE047';
+    ctx.font = '800 6.5px "Plus Jakarta Sans", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('H', hx, hy + 0.5);
+    ctx.restore();
+
+    // West Wing Bullet-Rail Control Skyscraper (z = 0..42)
+    const tx = -36, tw = 18;
+    const ty = cy - 9, td = 18;
+    const th = 38;
+    const glassSouth = night ? mix(p.main, '#1E3A8A', 0.45) : mix(p.main, '#E0F2FE', 0.42);
+    const glassEast = night ? mix(p.roofDark, '#0F172A', 0.5) : mix(p.roofDark, '#94A3B8', 0.35);
+    box(ctx, tx, ty, tw, td, 0, th, {
+      top: p.roofLight,
+      south: glassSouth,
+      east: glassEast,
+      edge: '#FACC15',
+    });
+
+    for (let f = 0; f < 6; f++) {
+      const fz = 4.0 + f * 5.2;
+      for (let c = 0; c < 2; c++) {
+        southWindow(ctx, ty + td, tx + 2.2 + c * 7.2, fz, 5.8, 3.2, night ? '#FFE694' : 'rgba(235, 250, 255, 0.94)');
+        eastWindow(ctx, tx + tw, ty + 2.2 + c * 7.2, fz, 5.8, 3.2, night ? win.litDim : 'rgba(205, 232, 250, 0.88)');
+      }
+    }
+
+    // Crown & Twin Blinking Transit Beacons
+    box(ctx, tx + 2, ty + 2, tw - 4, td - 4, th, 4.5, {
+      top: '#FFFFFF',
+      south: '#FACC15',
+      east: p.main,
+    });
+    const blink = (Math.sin(time * 5 + seed) + 1) / 2;
+    const [sbX, sbY] = proj([tx + tw * 0.5, ty + td * 0.5, th + 4.5]);
+    const [stX, stY] = proj([tx + tw * 0.5, ty + td * 0.5, th + 13.5]);
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(sbX, sbY);
+    ctx.lineTo(stX, stY);
+    ctx.stroke();
+    ctx.fillStyle = `rgba(56, 189, 248, ${0.55 + blink * 0.45})`;
+    ctx.beginPath();
+    ctx.arc(stX, stY, 2.4 + blink * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 /**

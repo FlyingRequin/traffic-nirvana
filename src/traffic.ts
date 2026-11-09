@@ -1099,7 +1099,6 @@ export class TrafficSimulation {
    */
   private recordStoreService(dest: Destination, amount: number) {
     dest.servicedCount = (dest.servicedCount || 0) + amount;
-    if (dest.isTrainStation) return;
 
     const currentTier = dest.tier || (dest.isCircular ? 3 : 1);
     const nonStationStores = this.getDestinations().filter((d) => !d.isTrainStation);
@@ -1111,20 +1110,31 @@ export class TrafficSimulation {
       nextTier = 2;
     } else if (currentTier === 2 && dest.servicedCount >= 34) {
       nextTier = 3;
-    } else if (currentTier === 3 && dest.servicedCount >= 64 && tier4Count < maxTier4Allowed) {
+    } else if (
+      currentTier === 3 &&
+      dest.servicedCount >= 64 &&
+      (dest.isTrainStation || tier4Count < maxTier4Allowed)
+    ) {
       nextTier = 4;
     }
 
     if (nextTier) {
       dest.tier = nextTier;
-      dest.isCircular = nextTier === 3;
+      if (!dest.isTrainStation) {
+        dest.isCircular = nextTier === 3;
+      }
       dest.spawnAnimation = 0.25;
       dest.maxPins = CONFIG.GAMEPLAY.MAX_PINS_PER_DESTINATION + (nextTier - 1);
       dest.spawnInterval = Math.max(2.05, dest.spawnInterval * 0.9);
       sound.playMotorwayPlacement();
 
-      const badgeText =
-        nextTier === 2
+      const badgeText = dest.isTrainStation
+        ? nextTier === 2
+          ? '⬆️ TIER II METRO TERMINAL!'
+          : nextTier === 3
+            ? '⬆️ TIER III GRAND CENTRAL!'
+            : '⬆️ TIER IV HYPER-RAIL HUB!'
+        : nextTier === 2
           ? '⬆️ TIER II GALLERIA!'
           : nextTier === 3
             ? '⬆️ TIER III ROTUNDA HUB!'
