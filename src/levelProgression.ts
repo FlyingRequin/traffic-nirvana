@@ -657,24 +657,22 @@ export class LevelProgression {
       spawnedMilestoneToday = true;
     }
 
-    // 1. Periodic Store Upgrades (only promotes Tier 1 -> Tier 2 or Tier 2 -> Tier 3 for older underserved stores; Tier 4 is earned by high commuter volume or manual densification)
-    if (day >= 9 && (day - 9) % 6 === 0) {
-      this.upgradeExistingStore(undefined, false, 3);
+    // 1. Periodic Store Upgrades (promotes Tier 1 -> Tier 2 -> Tier 3 -> Tier 4 as the city ages)
+    if (day >= 8 && (day - 8) % 5 === 0) {
+      this.upgradeExistingStore(undefined, false, day >= 23 ? 4 : 3);
     }
 
-    // 1b. Balanced Residential Pyramid Upgrades (maintains ~45% Houses, ~35% Apartments, ~20% Skyscrapers)
-    if (day >= 6 && (day - 6) % 3 === 0) {
+    // 1b. Continuous Residential Pyramid Upgrades (maintains ~45% Houses, ~35% Apartments, ~20% Skyscrapers)
+    if (day >= 5 && (day - 5) % 2 === 0) {
       const mostNeeded = this.getMostUnderservedColor();
-      if (mostNeeded && this.getColorSupplyRatio(mostNeeded) < 6.8) {
-        this.upgradeExistingHouse(mostNeeded);
-      }
+      this.upgradeExistingHouse(mostNeeded || undefined);
     }
 
-    // 2. Procedural Additional Stores on Days 12, 16, 20, 24, 28, 33, 38, 43...
+    // 2. Continuous Procedural Store Expansion on Days 12, 16, 19, 22, 25, 28, 31, 34, 37, 40, 43, 46, 49, 52...
     const nonStationStores = this.destinations.filter((d) => !d.isTrainStation).length;
     if (
-      nonStationStores < 12 &&
-      (day === 12 || day === 16 || day === 20 || (day >= 24 && (day - 24) % 4 === 0))
+      nonStationStores < 22 &&
+      (day === 12 || day === 16 || day === 19 || (day >= 22 && (day - 22) % 3 === 0))
     ) {
       const unlockedCount = day >= 21 ? 5 : day >= 15 ? 4 : day >= 10 ? 3 : 2;
       const availableColors = this.colorProgression.slice(0, unlockedCount);
@@ -690,30 +688,34 @@ export class LevelProgression {
       // Prioritize colors that have high car supply ratio or fewer stores
       const sortedColors = [...availableColors].sort((a, b) => {
         const ratioDiff = this.getColorSupplyRatio(b) - this.getColorSupplyRatio(a);
-        if (Math.abs(ratioDiff) > 1.2) return ratioDiff;
+        if (Math.abs(ratioDiff) > 1.0) return ratioDiff;
         return (colorCounts.get(a) || 0) - (colorCounts.get(b) || 0);
       });
       const chosenColor = sortedColors[0];
 
       this.spawnProceduralDestination(chosenColor, true);
-      if (this.getColorSupplyRatio(chosenColor) < 5.2) {
-        this.spawnProceduralHouse(chosenColor);
-      }
+      this.spawnProceduralHouse(chosenColor);
     }
 
-    // 3. Demand-Governed Residential Growth (prevents car oversupply while keeping underserved colors supported)
+    // 3. Unconditional Daily Suburb & City Growth (city never freezes!)
     if (!spawnedMilestoneToday && day >= 2) {
-      const count = day >= 14 ? 2 : 1;
+      const week = this.getWeekNumber();
+      const targetRatioCap = 7.2 + week * 0.95;
+      const count = day >= 10 ? 2 : 1;
+
       for (let c = 0; c < count; c++) {
         const underservedColor = this.getMostUnderservedColor();
         if (!underservedColor) break;
         const supplyRatio = this.getColorSupplyRatio(underservedColor);
-        // Only add residential capacity if supply ratio is below 6.4 cars per weighted store
-        if (supplyRatio < 6.4) {
+
+        if (supplyRatio < targetRatioCap) {
           this.spawnProceduralHouse(underservedColor);
-        } else if (c === 0 && day % 2 === 0) {
-          // Consolidate existing 1x1 sprawl into a cleaner pyramid without inflating car count excessively
-          this.upgradeExistingHouse(underservedColor, true);
+        } else if (c === 0) {
+          // All existing stores are well-supplied: open a new store or expand suburbs!
+          if (day % 2 === 0 && nonStationStores < 22) {
+            this.spawnProceduralDestination(underservedColor, true);
+          }
+          this.spawnProceduralHouse(underservedColor);
         }
       }
     }
@@ -1019,17 +1021,17 @@ export class LevelProgression {
     const tier1Houses = pool.filter((h) => h.tier === 1).sort(sortByCoreAndNeed);
 
     // Golden Pyramid Rule:
-    // Promote T2 -> T3 Skyscraper only when there are at least ~1.8x as many T2 Apartments as T3 Skyscrapers
+    // Promote T2 -> T3 Skyscraper once a color has at least 2 T2 Apartments and more T2s than T3s
     const canPromoteToTier3 =
       tier2Houses.length >= 1 &&
-      (this.currentDay >= 11 || forceConsolidate) &&
-      (tier2Houses.length >= Math.ceil((tier3Houses.length + 1) * 1.6) ||
+      (this.currentDay >= 9 || forceConsolidate) &&
+      (tier2Houses.length >= Math.max(2, tier3Houses.length + 1) ||
         (forceConsolidate && tier1Houses.length === 0));
 
-    // Promote T1 -> T2 Apartment only when T1 suburban base remains healthy
+    // Promote T1 -> T2 Apartment whenever there are at least 2 T1 Houses
     const canPromoteToTier2 =
       tier1Houses.length >= 1 &&
-      (forceConsolidate || tier1Houses.length >= Math.max(2, Math.floor((tier2Houses.length + tier3Houses.length) * 0.85)));
+      (forceConsolidate || tier1Houses.length >= Math.max(2, Math.floor(tier2Houses.length * 0.85)));
 
     let target: House | null = null;
     if (canPromoteToTier3) {
@@ -1069,14 +1071,14 @@ export class LevelProgression {
   }
 
   /**
-   * When a building upgrades to Tier 2 or Tier 3 and its color already has 7+ buildings,
-   * absorbs 1 nearby idle Tier-1 house of the same color so the map evolves from 1x1 sprawl
-   * into clean, high-density Mid-Rise & Skyscraper districts!
+   * Only absorbs a nearby idle Tier-1 house when the city grid is genuinely saturated (80+ lots)
+   * so normal progression from Week 1 to Week 12+ continuously expands neighborhoods outward AND upward!
    */
   private tryMergeNearbyTier1Sprawl(upgradedHouse: House): boolean {
+    if (this.houses.length < 80) return false;
     const sameColor = this.houses.filter((h) => h.color === upgradedHouse.color);
     const sameColorT1 = sameColor.filter((h) => h.tier === 1);
-    if (sameColor.length < 7 || sameColorT1.length <= 3) return false;
+    if (sameColor.length < 14 || sameColorT1.length <= 6) return false;
 
     const mergeCandidate = sameColorT1.find(
       (h) =>
@@ -1105,19 +1107,19 @@ export class LevelProgression {
     for (const color of colors) {
       const colorHouses = this.houses.filter((h) => h.color === color);
       const t1Count = colorHouses.filter((h) => h.tier === 1).length;
-      if (t1Count <= 3) continue;
+      if (announce ? colorHouses.length < 2 : t1Count <= 4) continue;
 
       // Consolidate excess Tier-1 sprawl while preserving the suburban pyramid
       const targetUpgrades = announce
-        ? Math.max(1, Math.floor(t1Count * 0.35))
-        : Math.max(1, Math.floor((t1Count - 3) * 0.3));
+        ? Math.max(1, Math.floor(colorHouses.length * 0.3))
+        : Math.max(1, Math.floor((t1Count - 4) * 0.25));
       for (let i = 0; i < targetUpgrades; i++) {
         const res = this.upgradeExistingHouse(color, true, announce);
         if (res) upgradedCount++;
       }
     }
 
-    // Only advance commercial stores during manual densification button clicks (or if a store is still Tier 1 after Day 16)
+    // Only advance commercial stores during manual densification button clicks
     if (announce) {
       const upgradeableStores = this.destinations.filter(
         (d) => !d.isTrainStation && (d.tier || (d.isCircular ? 3 : 1)) < 4
@@ -1126,6 +1128,14 @@ export class LevelProgression {
         if (this.upgradeExistingStore(undefined, true, 4)) {
           upgradedCount++;
         }
+      }
+      // Also seed fresh urban expansion if the city has room for more stores/suburbs
+      const nonStationStores = this.destinations.filter((d) => !d.isTrainStation).length;
+      if (this.currentDay >= 15 && nonStationStores < 22) {
+        const expColor = colors[Math.floor(Math.random() * colors.length)];
+        this.spawnProceduralDestination(expColor, this.currentDay >= 24 && Math.random() < 0.45);
+        this.spawnProceduralHouse(expColor);
+        upgradedCount++;
       }
     }
 
@@ -1247,10 +1257,10 @@ export class LevelProgression {
 
   private isTileFreeForSpawn(x: number, y: number): boolean {
     if (
-      x < this.activeBounds.minX + 1 ||
-      x > this.activeBounds.maxX - 1 ||
-      y < this.activeBounds.minY + 1 ||
-      y > this.activeBounds.maxY - 1
+      x < Math.max(1, this.activeBounds.minX) ||
+      x > Math.min(CONFIG.GRID_COLS - 2, this.activeBounds.maxX) ||
+      y < Math.max(1, this.activeBounds.minY) ||
+      y > Math.min(CONFIG.GRID_ROWS - 2, this.activeBounds.maxY)
     ) {
       return false;
     }
@@ -1273,45 +1283,37 @@ export class LevelProgression {
     const w = 2;
     const h = 2;
 
-    for (let attempt = 0; attempt < 150; attempt++) {
-      const gx =
-        this.activeBounds.minX +
-        2 +
-        Math.floor(
-          Math.random() * Math.max(1, this.activeBounds.maxX - this.activeBounds.minX - 5)
-        );
-      const gy =
-        this.activeBounds.minY +
-        2 +
-        Math.floor(
-          Math.random() * Math.max(1, this.activeBounds.maxY - this.activeBounds.minY - 5)
-        );
-
-      // Ensure 2x2 footprint + 1-tile perimeter buffer is completely clear of water, roads, and buildings
-      let clear = true;
-      for (let dy = -1; dy <= h; dy++) {
-        for (let dx = -1; dx <= w; dx++) {
-          if (!this.isTileFreeForSpawn(gx + dx, gy + dy)) {
-            clear = false;
-            break;
+    const canFitStoreAt = (gx: number, gy: number, strictBuffer: boolean): { x: number; y: number } | null => {
+      // Check 2x2 core building footprint
+      for (let dy = 0; dy < h; dy++) {
+        for (let dx = 0; dx < w; dx++) {
+          if (!this.isTileFreeForSpawn(gx + dx, gy + dy)) return null;
+        }
+      }
+      if (strictBuffer) {
+        // Also require 1-tile perimeter buffer in early attempts
+        for (let dy = -1; dy <= h; dy++) {
+          for (let dx = -1; dx <= w; dx++) {
+            if (!this.isTileFreeForSpawn(gx + dx, gy + dy)) return null;
           }
         }
-        if (!clear) break;
+        return { x: gx + 1, y: gy + h };
       }
-      if (!clear) continue;
 
-      // Also keep a minimum spacing from other destinations so stores don't crowd each other
-      const tooCloseToDest = this.destinations.some(
-        (d) => Math.hypot(d.x - gx, d.y - gy) < 5.0
-      );
-      if (tooCloseToDest) continue;
+      // In compact infill mode, accept either a South entrance (gy + h) or North entrance (gy - 1)
+      if (this.isTileFreeForSpawn(gx + 1, gy + h)) {
+        return { x: gx + 1, y: gy + h };
+      }
+      if (this.isTileFreeForSpawn(gx, gy + h)) {
+        return { x: gx, y: gy + h };
+      }
+      if (this.isTileFreeForSpawn(gx + 1, gy - 1)) {
+        return { x: gx + 1, y: gy - 1 };
+      }
+      return null;
+    };
 
-      // Keep new stores reasonably separated from existing same-color houses
-      const tooCloseToSameColorHouse =
-        attempt < 110 &&
-        this.houses.some((house) => house.color === color && Math.hypot(house.x - gx, house.y - gy) < 6.0);
-      if (tooCloseToSameColorHouse) continue;
-
+    const placeOrScheduleStore = (gx: number, gy: number, entrance: { x: number; y: number }) => {
       if (this.currentDay > 1) {
         this.scheduleConstructionSite(
           'destination',
@@ -1320,7 +1322,7 @@ export class LevelProgression {
           gy,
           w,
           h,
-          { x: gx + 1, y: gy + h },
+          entrance,
           `New ${color.toUpperCase()} Store`,
           4.8
         );
@@ -1332,16 +1334,68 @@ export class LevelProgression {
         return null;
       }
 
-      return this.createDestination(
-        color,
-        gx,
-        gy,
-        w,
-        h,
-        false,
-        { x: gx + 1, y: gy + h },
-        notify
+      return this.createDestination(color, gx, gy, w, h, false, entrance, notify);
+    };
+
+    const minX = Math.max(1, this.activeBounds.minX);
+    const maxX = Math.min(CONFIG.GRID_COLS - 3, this.activeBounds.maxX - 1);
+    const minY = Math.max(1, this.activeBounds.minY);
+    const maxY = Math.min(CONFIG.GRID_ROWS - 3, this.activeBounds.maxY - 1);
+
+    // Pass 1 & 2: Randomized search (strict spacing first, then compact urban infill)
+    for (let attempt = 0; attempt < 220; attempt++) {
+      const strict = attempt < 110;
+      const gx = minX + Math.floor(Math.random() * Math.max(1, maxX - minX + 1));
+      const gy = minY + Math.floor(Math.random() * Math.max(1, maxY - minY + 1));
+
+      const entrance = canFitStoreAt(gx, gy, strict);
+      if (!entrance) continue;
+
+      const minDestDist = strict ? 4.4 : 2.8;
+      const tooCloseToDest = this.destinations.some(
+        (d) => Math.hypot(d.x - gx, d.y - gy) < minDestDist
       );
+      if (tooCloseToDest) continue;
+
+      const tooCloseToSite = this.constructionSites.some(
+        (s) => Math.hypot(s.x - gx, s.y - gy) < minDestDist
+      );
+      if (tooCloseToSite) continue;
+
+      if (
+        strict &&
+        this.houses.some((house) => house.color === color && Math.hypot(house.x - gx, house.y - gy) < 4.8)
+      ) {
+        continue;
+      }
+
+      return placeOrScheduleStore(gx, gy, entrance);
+    }
+
+    // Pass 3: Exhaustive Grid Scan across the entire map so Twin Islands / Alpine Pass never run out of store sites!
+    let bestSpot: { gx: number; gy: number; entrance: { x: number; y: number }; score: number } | null = null;
+    for (let gy = minY; gy <= maxY; gy++) {
+      for (let gx = minX; gx <= maxX; gx++) {
+        const entrance = canFitStoreAt(gx, gy, false);
+        if (!entrance) continue;
+
+        let minDistToExisting = 999;
+        for (const d of this.destinations) {
+          minDistToExisting = Math.min(minDistToExisting, Math.hypot(d.x - gx, d.y - gy));
+        }
+        for (const s of this.constructionSites) {
+          minDistToExisting = Math.min(minDistToExisting, Math.hypot(s.x - gx, s.y - gy));
+        }
+        if (minDistToExisting < 2.6) continue;
+
+        if (!bestSpot || minDistToExisting > bestSpot.score) {
+          bestSpot = { gx, gy, entrance, score: minDistToExisting };
+        }
+      }
+    }
+
+    if (bestSpot) {
+      return placeOrScheduleStore(bestSpot.gx, bestSpot.gy, bestSpot.entrance);
     }
 
     // Fallback Vertical Store Densification when late-game 34x22 grid is saturated:
@@ -1369,15 +1423,15 @@ export class LevelProgression {
     const sameColorHouses = this.houses.filter((h) => h.color === color);
     const upgradableSameColor = sameColorHouses.filter((h) => (h.tier || 1) < 3);
 
-    // Smart Vertical Densification:
-    // Once a color has 4+ houses (or the city has 18+ houses total), convert a balanced share
-    // of new spawns into vertical upgrades while preserving the ~45% T1 / ~35% T2 / ~20% T3 pyramid!
+    // Balanced Horizontal + Vertical Growth:
+    // ~38% of spawns upgrade an existing building into a Mid-Rise Apartment or High-Rise Skyscraper,
+    // while ~62% place a new house lot so the city continuously expands across all 4 quadrants of the map!
     if (upgradableSameColor.length > 0) {
       const densityChance =
-        sameColorHouses.length >= 8 || this.houses.length >= 30
-          ? 0.78
-          : sameColorHouses.length >= 5 || this.houses.length >= 18
-          ? 0.52
+        this.houses.length >= 65
+          ? 0.58
+          : sameColorHouses.length >= 5 || this.houses.length >= 22
+          ? 0.36
           : 0;
       if (Math.random() < densityChance) {
         const upgraded = this.upgradeExistingHouse(color, false);
@@ -1392,30 +1446,26 @@ export class LevelProgression {
       { dx: 0, dy: -1 },
     ];
 
-    for (let attempt = 0; attempt < 100; attempt++) {
+    const minX = Math.max(1, this.activeBounds.minX);
+    const maxX = Math.min(CONFIG.GRID_COLS - 2, this.activeBounds.maxX);
+    const minY = Math.max(1, this.activeBounds.minY);
+    const maxY = Math.min(CONFIG.GRID_ROWS - 2, this.activeBounds.maxY);
+
+    for (let attempt = 0; attempt < 130; attempt++) {
       let gx: number;
       let gy: number;
 
-      // 65% of attempts try to grow an existing same-color suburb cluster
-      if (sameColorHouses.length > 0 && attempt < 65) {
+      // 52% of attempts grow an existing same-color cluster; 48% seed new outer suburbs across the map!
+      const clusterThreshold = sameColorHouses.length >= 6 ? 48 : 65;
+      if (sameColorHouses.length > 0 && attempt < clusterThreshold) {
         const anchor = sameColorHouses[Math.floor(Math.random() * sameColorHouses.length)];
-        const offsetX = Math.floor(Math.random() * 7) - 3;
-        const offsetY = Math.floor(Math.random() * 7) - 3;
+        const offsetX = Math.floor(Math.random() * 9) - 4;
+        const offsetY = Math.floor(Math.random() * 9) - 4;
         gx = anchor.x + offsetX;
         gy = anchor.y + offsetY;
       } else {
-        gx =
-          this.activeBounds.minX +
-          1 +
-          Math.floor(
-            Math.random() * Math.max(1, this.activeBounds.maxX - this.activeBounds.minX - 2)
-          );
-        gy =
-          this.activeBounds.minY +
-          1 +
-          Math.floor(
-            Math.random() * Math.max(1, this.activeBounds.maxY - this.activeBounds.minY - 2)
-          );
+        gx = minX + Math.floor(Math.random() * Math.max(1, maxX - minX + 1));
+        gy = minY + Math.floor(Math.random() * Math.max(1, maxY - minY + 1));
       }
 
       if (!this.isTileFreeForSpawn(gx, gy)) continue;
@@ -1441,7 +1491,7 @@ export class LevelProgression {
       return this.createHouse(color, gx, gy, chosenDriveway);
     }
 
-    return this.upgradeExistingHouse(color, false);
+    return this.upgradeExistingHouse(color, false, true);
   }
 
   private updateDestinations(dt: number) {
