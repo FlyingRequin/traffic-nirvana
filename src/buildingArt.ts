@@ -1486,42 +1486,50 @@ export function drawDestination(
 }
 
 // ============================================================================
-// DESIGN B — "CLAY TOY": soft rounded volumes, gradient shading, ambient
-// occlusion, pillowy roofs, cylindrical tower. Feels like a tilt-shift toy.
+// DESIGN B — "CLAY TOY": soft rounded volumes, layered shading, fast ambient
+// occlusion (zero ctx.filter GPU readbacks!), pillowy roofs, cylindrical tower.
 // ============================================================================
 function clayExtrude(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, d: number, z0: number, h: number, r: number, top: string, side: string) {
   const lift = KY;
   const yb = y - z0 * lift;
   const yt = y - (z0 + h) * lift;
-  // Side body: union of ground and top rounded rects + fill between
-  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
-  grad.addColorStop(0, mix(side, '#FFFFFF', 0.12));
-  grad.addColorStop(0.55, side);
-  grad.addColorStop(1, mix(side, '#000000', 0.22));
-  ctx.fillStyle = grad;
+
+  // Side body with fast 2-tone clay shading (avoids per-frame gradient allocation)
+  ctx.fillStyle = side;
   roundRectPath(ctx, x, yb, w, d, r);
   ctx.fill();
   ctx.fillRect(x, yt + d / 2, w, yb - yt);
-  // Top
-  const tg = ctx.createLinearGradient(x, yt, x + w, yt + d);
-  tg.addColorStop(0, mix(top, '#FFFFFF', 0.28));
-  tg.addColorStop(1, top);
-  ctx.fillStyle = tg;
+
+  // Soft right-side clay shadow band
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.16)';
+  ctx.fillRect(x + w * 0.65, yt + d / 2, w * 0.35, yb - yt + d * 0.25);
+
+  // Top pillow surface + warm highlight
+  ctx.fillStyle = top;
   roundRectPath(ctx, x, yt, w, d, r);
   ctx.fill();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.24)';
+  roundRectPath(ctx, x + 1.5, yt + 1.2, w * 0.65, d * 0.55, Math.max(2, r - 1.5));
+  ctx.fill();
+
   // Rim highlight
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-  ctx.lineWidth = 0.8;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.42)';
+  ctx.lineWidth = 0.9;
+  roundRectPath(ctx, x, yt, w, d, r);
   ctx.stroke();
 }
 
 function clayAO(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, d: number, h: number) {
-  ctx.save();
-  ctx.filter = 'blur(2.5px)';
-  ctx.fillStyle = 'rgba(30, 25, 40, 0.28)';
-  roundRectPath(ctx, x + h * 0.25, y + h * 0.2, w + h * 0.15, d, 8);
+  // Fast 2-layer concentric soft shadow (replaces slow ctx.filter = 'blur(2.5px)'!)
+  const sx = x + h * 0.22;
+  const sy = y + h * 0.18;
+  const sw = w + h * 0.15;
+  ctx.fillStyle = 'rgba(20, 18, 35, 0.13)';
+  roundRectPath(ctx, sx - 2, sy - 2, sw + 4, d + 4, 10);
   ctx.fill();
-  ctx.restore();
+  ctx.fillStyle = 'rgba(20, 18, 35, 0.22)';
+  roundRectPath(ctx, sx + 0.5, sy + 0.5, sw - 1, d - 1, 8);
+  ctx.fill();
 }
 
 function clayHouse(ctx: CanvasRenderingContext2D, p: ArtPalette, night: boolean) {
@@ -1541,20 +1549,22 @@ function clayHouse(ctx: CanvasRenderingContext2D, p: ArtPalette, night: boolean)
   roundRectPath(ctx, -1.8, 8 - 5.5 * KY, 3.6, 5.5 * KY, 1.8);
   ctx.fill();
 
-  // Pillowy hip roof
+  // Pillowy hip roof (layered clay shading without per-frame radial gradient allocation)
   const ry = -8 - 8 * KY - 1.5;
-  const rg = ctx.createRadialGradient(-4, ry + 2, 1, 0, ry + 8, 18);
-  rg.addColorStop(0, mix(p.roofLight, '#FFFFFF', 0.35));
-  rg.addColorStop(0.6, p.main);
-  rg.addColorStop(1, p.roofDark);
   ctx.fillStyle = 'rgba(0,0,0,0.18)';
   roundRectPath(ctx, -11.5, ry + 2.5, 23, 18, 8);
   ctx.fill();
-  ctx.fillStyle = rg;
+  ctx.fillStyle = p.roofDark;
   roundRectPath(ctx, -12, ry, 24, 18, 8);
   ctx.fill();
+  ctx.fillStyle = p.main;
+  roundRectPath(ctx, -11.5, ry + 0.5, 22, 16, 7.5);
+  ctx.fill();
+  ctx.fillStyle = mix(p.roofLight, '#FFFFFF', 0.32);
+  roundRectPath(ctx, -9.5, ry + 1.5, 14, 9.5, 5);
+  ctx.fill();
   // Ridge crease
-  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
   ctx.lineWidth = 1.2;
   ctx.lineCap = 'round';
   ctx.beginPath();
@@ -1562,12 +1572,13 @@ function clayHouse(ctx: CanvasRenderingContext2D, p: ArtPalette, night: boolean)
   ctx.lineTo(5, ry + 8);
   ctx.stroke();
   // Bush
-  const bg = ctx.createRadialGradient(13, 5, 0.5, 13.5, 6, 5);
-  bg.addColorStop(0, '#7FD48E');
-  bg.addColorStop(1, '#2E8A57');
-  ctx.fillStyle = bg;
+  ctx.fillStyle = '#2E8A57';
   ctx.beginPath();
   ctx.arc(13.5, 6, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#7FD48E';
+  ctx.beginPath();
+  ctx.arc(12.7, 5.1, 2.3, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -1605,12 +1616,13 @@ function clayApartment(ctx: CanvasRenderingContext2D, p: ArtPalette, night: bool
   });
   // Rooftop dome skylight
   const topY = -10 - z * KY + 7;
-  const sg = ctx.createRadialGradient(-1.5, topY - 1.5, 0.3, 0, topY, 4.5);
-  sg.addColorStop(0, '#FFFFFF');
-  sg.addColorStop(1, mix(p.roofLight, '#BFE0FF', 0.5));
-  ctx.fillStyle = sg;
+  ctx.fillStyle = mix(p.roofLight, '#BFE0FF', 0.5);
   ctx.beginPath();
   ctx.arc(0, topY, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath();
+  ctx.arc(-1.2, topY - 1.2, 1.8, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -1620,29 +1632,27 @@ function clayHighRise(ctx: CanvasRenderingContext2D, p: ArtPalette, night: boole
   const ry = r * 0.55;
   const segs = 7;
   const segH = 5.2;
-  // Long soft shadow
-  ctx.save();
-  ctx.filter = 'blur(3px)';
-  ctx.fillStyle = 'rgba(25, 20, 45, 0.26)';
+  // Fast 2-layer soft shadow (replaces slow ctx.filter = 'blur(3px)'!)
+  ctx.fillStyle = 'rgba(20, 18, 38, 0.14)';
   ctx.beginPath();
-  ctx.ellipse(10, 6, r + 8, ry + 3, 0.35, 0, Math.PI * 2);
+  ctx.ellipse(10, 6, r + 10, ry + 4.5, 0.35, 0, Math.PI * 2);
   ctx.fill();
-  ctx.restore();
+  ctx.fillStyle = 'rgba(20, 18, 38, 0.24)';
+  ctx.beginPath();
+  ctx.ellipse(9.5, 5.5, r + 6.5, ry + 2, 0.35, 0, Math.PI * 2);
+  ctx.fill();
 
   // Base plinth
   clayExtrude(ctx, -13, -11, 26, 22, 0, 3.5, 8, mix(p.main, '#FFFFFF', 0.55), p.roofDark);
 
   const baseY = 0 - 3.5 * KY;
+  const bandEven = mix(p.main, '#FFFFFF', 0.55);
+  const bandOdd = mix(p.main, '#FFFFFF', 0.35);
   for (let s = 0; s < segs; s++) {
     const yb = baseY - s * segH * KY;
     const yt = yb - segH * KY;
     const rr = r - s * 0.35;
-    const g = ctx.createLinearGradient(-rr, 0, rr, 0);
-    const band = s % 2 === 0 ? mix(p.main, '#FFFFFF', 0.55) : mix(p.main, '#FFFFFF', 0.35);
-    g.addColorStop(0, mix(band, '#FFFFFF', 0.35));
-    g.addColorStop(0.45, band);
-    g.addColorStop(1, mix(band, '#000000', 0.32));
-    ctx.fillStyle = g;
+    ctx.fillStyle = s % 2 === 0 ? bandEven : bandOdd;
     ctx.beginPath();
     ctx.ellipse(0, yb, rr, ry, 0, 0, Math.PI);
     ctx.lineTo(-rr, yt);
@@ -1663,14 +1673,11 @@ function clayHighRise(ctx: CanvasRenderingContext2D, p: ArtPalette, night: boole
   // Dome cap
   const capY = baseY - segs * segH * KY;
   const rr = r - segs * 0.35;
-  const dg = ctx.createRadialGradient(-rr * 0.4, capY - 4, 1, 0, capY, rr * 1.3);
-  dg.addColorStop(0, mix(p.roofLight, '#FFFFFF', 0.5));
-  dg.addColorStop(0.7, p.main);
-  dg.addColorStop(1, p.roofDark);
-  ctx.fillStyle = dg;
+  ctx.fillStyle = p.main;
   ctx.beginPath();
   ctx.ellipse(0, capY, rr, ry, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.fillStyle = mix(p.roofLight, '#FFFFFF', 0.45);
   ctx.beginPath();
   ctx.ellipse(0, capY - 1.5, rr * 0.75, ry * 0.75 + 2.5, 0, Math.PI, 0);
   ctx.fill();

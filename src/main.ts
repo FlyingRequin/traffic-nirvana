@@ -41,6 +41,7 @@ class MiniMotorwaysGame {
   private btnPause: HTMLElement;
   private btnSpeed1: HTMLElement;
   private btnSpeed2: HTMLElement;
+  private btnSpeed4: HTMLElement;
   private isPanningCamera: boolean = false;
   private lastPanScreen: { x: number; y: number } = { x: 0, y: 0 };
   private activeTouchPointers: Map<number, { x: number; y: number }> = new Map();
@@ -109,6 +110,7 @@ class MiniMotorwaysGame {
     this.btnPause = document.getElementById('btn-pause')!;
     this.btnSpeed1 = document.getElementById('btn-speed-1')!;
     this.btnSpeed2 = document.getElementById('btn-speed-2')!;
+    this.btnSpeed4 = document.getElementById('btn-speed-4')!;
     this.toolDrawBtn = document.getElementById('tool-draw')!;
     this.toolRoundaboutBtn = document.getElementById('tool-roundabout')!;
     this.toolTrafficLightBtn = document.getElementById('tool-traffic-light')!;
@@ -344,6 +346,7 @@ class MiniMotorwaysGame {
     this.btnPause.addEventListener('click', () => this.togglePause());
     this.btnSpeed1.addEventListener('click', () => this.setSpeed(1));
     this.btnSpeed2.addEventListener('click', () => this.setSpeed(2));
+    this.btnSpeed4.addEventListener('click', () => this.setSpeed(4));
     this.btnRestart.addEventListener('click', () => this.restartGame());
 
     window.addEventListener('keydown', (e) => {
@@ -376,6 +379,8 @@ class MiniMotorwaysGame {
         this.setSpeed(1);
       } else if (e.key === '2') {
         this.setSpeed(2);
+      } else if (e.key === '3' || e.key === '4') {
+        this.setSpeed(4);
       } else if (e.key === 'h' || e.key === 'H') {
         this.toggleHeatmap();
       } else if (e.key === 'p' || e.key === 'P') {
@@ -736,9 +741,11 @@ class MiniMotorwaysGame {
     if (!this.level.isPaused) {
       this.btnSpeed1.classList.toggle('active', this.level.gameSpeed === 1);
       this.btnSpeed2.classList.toggle('active', this.level.gameSpeed === 2);
+      this.btnSpeed4.classList.toggle('active', this.level.gameSpeed === 4);
     } else {
       this.btnSpeed1.classList.remove('active');
       this.btnSpeed2.classList.remove('active');
+      this.btnSpeed4.classList.remove('active');
     }
   }
 
@@ -748,6 +755,7 @@ class MiniMotorwaysGame {
     this.btnPause.classList.remove('active');
     this.btnSpeed1.classList.toggle('active', speed === 1);
     this.btnSpeed2.classList.toggle('active', speed === 2);
+    this.btnSpeed4.classList.toggle('active', speed === 4);
   }
 
   private toggleSound() {
@@ -1467,9 +1475,13 @@ class MiniMotorwaysGame {
 
     this.level.update(dt);
     if (!this.level.isPaused && !this.level.gameOver && !this.level.upgradePending) {
-      const scaledDt = dt * this.level.gameSpeed;
-      this.roadNetwork.update(scaledDt, (x, y) => this.traffic.getTrafficQueueAtIntersection(x, y));
-      this.traffic.update(scaledDt);
+      const totalScaledDt = dt * this.level.gameSpeed;
+      const steps = this.level.gameSpeed > 2 ? 2 : 1;
+      const stepDt = totalScaledDt / steps;
+      for (let s = 0; s < steps; s++) {
+        this.roadNetwork.update(stepDt, (x, y) => this.traffic.getTrafficQueueAtIntersection(x, y));
+        this.traffic.update(stepDt);
+      }
     }
 
     this.updateHUD();
