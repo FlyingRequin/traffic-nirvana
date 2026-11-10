@@ -1569,3 +1569,283 @@ body.night .daily-challenge-btn {
   }
 }
 
+/* ============================================================================
+   iOS / Mobile Touch Ergonomics & Compact Landscape HUD (.ios-mobile)
+   Desktop web layout remains 100% untouched; these rules activate only on
+   iPhone/mobile touch viewports (.ios-mobile).
+   ============================================================================ */
+.mobile-only-group,
+.mobile-pan-tool {
+  display: none;
+}
+
+.pan-circle {
+  background: rgba(56, 189, 248, 0.22);
+  color: #38bdf8;
+}
+
+#tool-pan.active .pan-circle {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+body.ios-mobile .mobile-only-group {
+  display: flex;
+}
+
+body.ios-mobile .mobile-pan-tool {
+  display: flex;
+}
+
+body.ios-mobile #hud-top {
+  top: max(6px, env(safe-area-inset-top));
+  left: max(10px, env(safe-area-inset-left));
+  right: max(10px, env(safe-area-inset-right));
+  height: 36px;
+}
+
+body.ios-mobile #hud-top .logo {
+  display: none;
+}
+
+body.ios-mobile .score-pill,
+body.ios-mobile .calendar-pill {
+  height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+body.ios-mobile .hud-right {
+  gap: 6px;
+  position: relative;
+}
+
+body.ios-mobile .control-group {
+  height: 34px;
+  padding: 2px;
+}
+
+body.ios-mobile .icon-btn {
+  min-width: 30px;
+  height: 30px;
+  font-size: 12px;
+  padding: 0 7px;
+}
+
+body.ios-mobile .env-btn-label {
+  display: none;
+}
+
+/* Secondary atmosphere buttons (Solar, Weather, Style) collapse into ✨ popover on iPhone */
+body.ios-mobile #env-control-group .env-secondary-btn {
+  display: none;
+}
+
+body.ios-mobile #env-control-group.mobile-open .env-secondary-btn {
+  display: inline-flex;
+}
+
+body.ios-mobile #env-control-group.mobile-open .env-secondary-btn .env-btn-label {
+  display: inline;
+  font-size: 11px;
+}
+
+/* Compact Circular Icon Dock for iPhone */
+body.ios-mobile #toolbar {
+  bottom: max(6px, env(safe-area-inset-bottom));
+  padding: 4px 8px;
+  gap: 5px;
+  border-radius: 20px;
+  max-width: calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 16px);
+}
+
+body.ios-mobile .dock-item {
+  position: relative;
+  padding: 3px;
+  min-width: 42px;
+  height: 42px;
+  justify-content: center;
+  border-radius: 14px;
+}
+
+body.ios-mobile .dock-circle {
+  width: 34px;
+  height: 34px;
+}
+
+body.ios-mobile .dock-meta {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+body.ios-mobile .dock-label,
+body.ios-mobile .dock-sub {
+  display: none;
+}
+
+body.ios-mobile .dock-badge {
+  position: absolute;
+  right: 0px;
+  bottom: 0px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Auto-hide 0-count secondary inventory badges on mobile so dock stays uncluttered */
+body.ios-mobile .dock-item.zero-count {
+  display: none;
+}
+
+body.ios-mobile .dock-divider {
+  height: 24px;
+  margin: 0 2px;
+}
+
+/* Single-Screen Non-Scrolling iPhone Landscape Start Menu & Modals */
+body.ios-mobile #start-screen .start-panel {
+  width: min(94vw, 760px);
+  max-height: calc(100dvh - 16px);
+  padding: 12px 18px;
+  border-radius: 20px;
+  overflow-y: auto;
+}
+
+body.ios-mobile .start-logo {
+  font-size: 18px;
+  margin-bottom: 2px;
+}
+
+body.ios-mobile .start-tagline {
+  font-size: 11.5px;
+  margin-bottom: 6px;
+}
+
+body.ios-mobile .start-section {
+  font-size: 10px;
+  margin: 6px 0 4px;
+}
+
+body.ios-mobile .map-cards {
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+body.ios-mobile .map-card {
+  padding: 7px 8px;
+  border-radius: 11px;
+  gap: 2px;
+}
+
+body.ios-mobile .map-emoji {
+  font-size: 17px;
+  margin-bottom: 0;
+}
+
+body.ios-mobile .map-name {
+  font-size: 12px;
+}
+
+body.ios-mobile .map-desc {
+  display: none;
+}
+
+body.ios-mobile .map-best {
+  font-size: 10px;
+  margin-top: 1px;
+}
+
+body.ios-mobile .mode-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+body.ios-mobile .mode-card {
+  padding: 6px 8px;
+  border-radius: 10px;
+  gap: 6px;
+}
+
+body.ios-mobile .mode-emoji {
+  font-size: 15px;
+}
+
+body.ios-mobile .mode-name {
+  font-size: 11.5px;
+}
+
+body.ios-mobile .mode-desc {
+  display: none;
+}
+
+body.ios-mobile .difficulty-cards {
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+body.ios-mobile .diff-card {
+  padding: 6px 8px;
+  border-radius: 10px;
+}
+
+body.ios-mobile .diff-desc {
+  display: none;
+}
+
+body.ios-mobile .option-grid {
+  margin-bottom: 6px;
+}
+
+body.ios-mobile .toggle-row {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+body.ios-mobile .start-actions-row {
+  grid-template-columns: 1.2fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+body.ios-mobile .start-btn,
+body.ios-mobile .daily-challenge-btn {
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-top: 0;
+}
+
+body.ios-mobile .how-to {
+  display: none;
+}
+
+body.ios-mobile .modal-card {
+  max-height: calc(100dvh - 20px);
+  overflow-y: auto;
+  padding: 14px 18px;
+}
+
+body.ios-mobile #upgrade-modal .upgrade-card {
+  padding: 10px 12px;
+}
+
+body.ios-mobile #upgrade-modal .upgrade-icon-badge {
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+  margin-bottom: 6px;
+}
+
+

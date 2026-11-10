@@ -1167,8 +1167,20 @@ export class RoadNetwork {
     }
   }
 
-  public toggleTrafficLight(x: number, y: number): 'placed' | 'removed' | 'failed' {
-    const road = this.getRoad(x, y);
+  public toggleTrafficLight(x: number, y: number, touchSnapRadius: number = 0): 'placed' | 'removed' | 'failed' {
+    let road = this.getRoad(x, y);
+    if ((!road || road.isRoundabout) && touchSnapRadius > 0) {
+      // On touchscreens, snap to the nearest valid road intersection within touchSnapRadius
+      let bestDist = Infinity;
+      for (const r of this.roads.values()) {
+        if (r.isRoundabout) continue;
+        const d = Math.hypot(r.x - x, r.y - y);
+        if (d <= touchSnapRadius && d < bestDist) {
+          bestDist = d;
+          road = r;
+        }
+      }
+    }
     if (!road || road.isRoundabout) return 'failed';
 
     if (road.hasTrafficLight) {
@@ -1427,14 +1439,14 @@ export class RoadNetwork {
     return false;
   }
 
-  public getMotorwayNear(x: number, y: number): Motorway | null {
+  public getMotorwayNear(x: number, y: number, hitRadius: number = 1.0): Motorway | null {
     for (const m of this.motorways) {
       const midX = (m.start.x + m.end.x) / 2;
       const midY = (m.start.y + m.end.y) / 2 - 36 / CONFIG.TILE_SIZE / 2;
       if (
-        (Math.abs(m.start.x - x) <= 1 && Math.abs(m.start.y - y) <= 1) ||
-        (Math.abs(m.end.x - x) <= 1 && Math.abs(m.end.y - y) <= 1) ||
-        Math.hypot(midX - x, midY - y) <= 1.5
+        (Math.abs(m.start.x - x) <= hitRadius && Math.abs(m.start.y - y) <= hitRadius) ||
+        (Math.abs(m.end.x - x) <= hitRadius && Math.abs(m.end.y - y) <= hitRadius) ||
+        Math.hypot(midX - x, midY - y) <= Math.max(1.5, hitRadius * 1.2)
       ) {
         return m;
       }
@@ -1478,12 +1490,12 @@ export class RoadNetwork {
     return false;
   }
 
-  public getSubwayNear(x: number, y: number): SubwayLine | null {
+  public getSubwayNear(x: number, y: number, hitRadius: number = 1.0): SubwayLine | null {
     for (const s of this.subways) {
       // 1. Station portal hit-tests
       if (
-        (Math.abs(s.start.x - x) <= 1 && Math.abs(s.start.y - y) <= 1) ||
-        (Math.abs(s.end.x - x) <= 1 && Math.abs(s.end.y - y) <= 1)
+        (Math.abs(s.start.x - x) <= hitRadius && Math.abs(s.start.y - y) <= hitRadius) ||
+        (Math.abs(s.end.x - x) <= hitRadius && Math.abs(s.end.y - y) <= hitRadius)
       ) {
         return s;
       }
@@ -1495,7 +1507,7 @@ export class RoadNetwork {
         const t = Math.max(0, Math.min(1, ((x - s.start.x) * dx + (y - s.start.y) * dy) / lenSq));
         const projX = s.start.x + t * dx;
         const projY = s.start.y + t * dy;
-        if (Math.hypot(x - projX, y - projY) <= 0.85) {
+        if (Math.hypot(x - projX, y - projY) <= Math.max(0.85, hitRadius * 0.85)) {
           return s;
         }
       }

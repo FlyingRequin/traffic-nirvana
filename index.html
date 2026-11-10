@@ -68,27 +68,30 @@
         </div>
 
         <div class="hud-right">
-          <div class="control-group env-control-group">
-            <button id="btn-solar" class="icon-btn env-pill-btn" title="Cycle Solar Lighting: Auto Cycle / Day / Golden Dusk / Night (N)">
+          <div class="control-group env-control-group" id="env-control-group">
+            <button id="btn-solar" class="icon-btn env-pill-btn env-secondary-btn" title="Cycle Solar Lighting: Auto Cycle / Day / Golden Dusk / Night (N)">
               <span id="solar-icon">🌤️</span>
               <span id="solar-label" class="env-btn-label">Auto</span>
             </button>
-            <button id="btn-weather" class="icon-btn env-pill-btn" title="Cycle Season & Weather: Auto / Spring Blossoms / Rain / Autumn Leaves / Winter Snow (K)">
+            <button id="btn-weather" class="icon-btn env-pill-btn env-secondary-btn" title="Cycle Season & Weather: Auto / Spring Blossoms / Rain / Autumn Leaves / Winter Snow (K)">
               <span id="weather-icon">🌸</span>
               <span id="weather-label" class="env-btn-label">Spring</span>
             </button>
-            <button id="btn-art-style" class="icon-btn env-pill-btn" title="Switch Architectural Style: Diorama / Clay Toy / Modern Glass (V)">
+            <button id="btn-art-style" class="icon-btn env-pill-btn env-secondary-btn" title="Switch Architectural Style: Diorama / Clay Toy / Modern Glass (V)">
               <span id="art-style-icon">🏠</span>
               <span id="art-style-label" class="env-btn-label">Diorama</span>
             </button>
-            <button id="btn-arterial" class="icon-btn env-pill-btn" title="Upgrade Arterial Highway Boost Tier (Costs 15 Roads or via Weekly Upgrade) [A]">
+            <button id="btn-arterial" class="icon-btn env-pill-btn env-primary-btn" title="Upgrade Arterial Highway Boost Tier (Costs 15 Roads or via Weekly Upgrade) [A]">
               <span id="arterial-icon">🛣️</span>
               <span id="arterial-label" class="env-btn-label">Arterial Lv.0</span>
             </button>
-            <button id="btn-densify" class="icon-btn env-pill-btn" title="Urban Densification: Consolidate 1x1 Suburbs into Mid-Rise Apartments & Skyscrapers [U]">
+            <button id="btn-densify" class="icon-btn env-pill-btn env-primary-btn" title="Urban Densification: Consolidate 1x1 Suburbs into Mid-Rise Apartments & Skyscrapers [U]">
               <span id="densify-icon">🏙️</span>
               <span id="densify-label" class="env-btn-label">Densify</span>
             </button>
+          </div>
+          <div class="control-group mobile-only-group">
+            <button id="btn-env-toggle" class="icon-btn" title="Atmosphere & Visual Style">✨</button>
           </div>
           <div class="control-group">
             <button id="btn-pause" class="icon-btn" title="Pause (Space)">
@@ -207,6 +210,18 @@
         </button>
 
         <div class="dock-divider"></div>
+
+        <button id="tool-pan" class="dock-item mobile-pan-tool" title="1-Finger Camera Pan & Zoom">
+          <div class="dock-circle pan-circle">
+            <svg viewBox="0 0 24 24" width="17" height="17">
+              <path fill="currentColor" d="M12 2l-4 4h3v5H6V8l-4 4 4 4v-3h5v5H8l4 4 4-4h-3v-5h5v3l4-4-4-4v3h-5V6h3l-4-4z"/>
+            </svg>
+          </div>
+          <div class="dock-meta">
+            <span class="dock-label">Pan</span>
+            <span class="dock-sub">Move</span>
+          </div>
+        </button>
 
         <button id="tool-erase" class="dock-item" title="Erase Road / Reclaim Item (E or Right-Click)">
           <div class="dock-circle erase-circle">

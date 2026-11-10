@@ -29,6 +29,8 @@ export class GameRenderer {
   public artStyle: ArtStyle = 'diorama';
   public env: EnvironmentSystem = new EnvironmentSystem();
   public showHeatmap: boolean = false;
+  public isMobileView: boolean = false;
+  public isTouchActive: boolean = false;
   private animTime: number = 0;
   private cameraInitialized: boolean = false;
   private smoothBounds = { minX: 2, maxX: 25, minY: 1, maxY: 16 };
@@ -48,9 +50,13 @@ export class GameRenderer {
   }
 
   public resize() {
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
     const width = window.innerWidth;
     const height = window.innerHeight;
+
+    this.isMobileView =
+      Math.min(width, height) <= 560 ||
+      (width <= 932 && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches);
 
     this.canvas.width = width * dpr;
     this.canvas.height = height * dpr;
@@ -75,7 +81,8 @@ export class GameRenderer {
     const worldY = (sy - this.offsetY) / this.scale;
 
     const prevZoom = this.userZoom;
-    this.userZoom = Math.max(0.55, Math.min(2.4, this.userZoom * factor));
+    const maxZoom = this.isMobileView ? 3.2 : 2.5;
+    this.userZoom = Math.max(0.5, Math.min(maxZoom, this.userZoom * factor));
     if (Math.abs(this.userZoom - prevZoom) < 0.0001) return;
 
     const newScale = this.autoScale * this.userZoom;
@@ -94,8 +101,10 @@ export class GameRenderer {
   }
 
   public panBy(dx: number, dy: number) {
-    this.userPanX += dx;
-    this.userPanY += dy;
+    const maxPanX = CONFIG.GRID_COLS * CONFIG.TILE_SIZE * this.scale * 0.65;
+    const maxPanY = CONFIG.GRID_ROWS * CONFIG.TILE_SIZE * this.scale * 0.65;
+    this.userPanX = Math.max(-maxPanX, Math.min(maxPanX, this.userPanX + dx));
+    this.userPanY = Math.max(-maxPanY, Math.min(maxPanY, this.userPanY + dy));
     this.offsetX += dx;
     this.offsetY += dy;
   }
@@ -114,10 +123,10 @@ export class GameRenderer {
   private updateCameraFraming(immediate: boolean = false) {
     const width = window.innerWidth;
     const height = window.innerHeight;
-    const marginX = 36;
-    const marginY = 68;
-    const availableW = Math.max(320, width - marginX * 2);
-    const availableH = Math.max(240, height - marginY * 2);
+    const marginX = this.isMobileView ? 8 : 36;
+    const marginY = this.isMobileView ? 12 : 68;
+    const availableW = Math.max(280, width - marginX * 2);
+    const availableH = Math.max(200, height - marginY * 2);
 
     const b = this.level.activeBounds;
     let targetMinX = b.minX;
@@ -125,18 +134,19 @@ export class GameRenderer {
     let targetMinY = b.minY;
     let targetMaxY = b.maxY;
 
-    // Ensure all spawned buildings + 2.5 tile margin are inside the target bounds
+    const pad = this.isMobileView ? 1.6 : 2.5;
+    // Ensure all spawned buildings + margin are inside the target bounds
     for (const h of this.level.houses) {
-      targetMinX = Math.min(targetMinX, Math.max(0, h.x - 2.5));
-      targetMaxX = Math.max(targetMaxX, Math.min(CONFIG.GRID_COLS - 1, h.x + 2.5));
-      targetMinY = Math.min(targetMinY, Math.max(0, h.y - 2.5));
-      targetMaxY = Math.max(targetMaxY, Math.min(CONFIG.GRID_ROWS - 1, h.y + 2.5));
+      targetMinX = Math.min(targetMinX, Math.max(0, h.x - pad));
+      targetMaxX = Math.max(targetMaxX, Math.min(CONFIG.GRID_COLS - 1, h.x + pad));
+      targetMinY = Math.min(targetMinY, Math.max(0, h.y - pad));
+      targetMaxY = Math.max(targetMaxY, Math.min(CONFIG.GRID_ROWS - 1, h.y + pad));
     }
     for (const d of this.level.destinations) {
-      targetMinX = Math.min(targetMinX, Math.max(0, d.x - 2.5));
-      targetMaxX = Math.max(targetMaxX, Math.min(CONFIG.GRID_COLS - 1, d.x + d.w + 2.0));
-      targetMinY = Math.min(targetMinY, Math.max(0, d.y - 2.5));
-      targetMaxY = Math.max(targetMaxY, Math.min(CONFIG.GRID_ROWS - 1, d.y + d.h + 2.0));
+      targetMinX = Math.min(targetMinX, Math.max(0, d.x - pad));
+      targetMaxX = Math.max(targetMaxX, Math.min(CONFIG.GRID_COLS - 1, d.x + d.w + pad * 0.8));
+      targetMinY = Math.min(targetMinY, Math.max(0, d.y - pad));
+      targetMaxY = Math.max(targetMaxY, Math.min(CONFIG.GRID_ROWS - 1, d.y + d.h + pad * 0.8));
     }
 
     if (immediate || !this.cameraInitialized) {
@@ -152,12 +162,16 @@ export class GameRenderer {
       this.smoothBounds.maxY += (targetMaxY - this.smoothBounds.maxY) * boundsLerp;
     }
 
-    const visibleCols = Math.max(12, this.smoothBounds.maxX - this.smoothBounds.minX + 1);
-    const visibleRows = Math.max(8, this.smoothBounds.maxY - this.smoothBounds.minY + 1);
+    const visibleCols = Math.max(10, this.smoothBounds.maxX - this.smoothBounds.minX + 1);
+    const visibleRows = Math.max(7, this.smoothBounds.maxY - this.smoothBounds.minY + 1);
 
     const scaleX = availableW / (visibleCols * CONFIG.TILE_SIZE);
     const scaleY = availableH / (visibleRows * CONFIG.TILE_SIZE);
-    this.autoScale = Math.min(scaleX, scaleY, 1.38);
+    const baseFitScale = Math.min(scaleX, scaleY);
+    // On mobile screens, apply a 1.38x framing zoom boost so houses, roads & pins are large and touch-friendly!
+    this.autoScale = this.isMobileView
+      ? Math.max(0.52, Math.min(baseFitScale * 1.38, 1.55))
+      : Math.min(baseFitScale, 1.38);
 
     this.autoCenterWorldX =
       ((this.smoothBounds.minX + this.smoothBounds.maxX + 1) / 2) * CONFIG.TILE_SIZE;
@@ -197,7 +211,7 @@ export class GameRenderer {
 
   public render(
     hoverCoord: GridCoord | null,
-    currentTool: 'draw' | 'erase' | 'motorway' | 'roundabout' | 'traffic_light' | 'subway' | 'blueprint',
+    currentTool: 'draw' | 'erase' | 'pan' | 'motorway' | 'roundabout' | 'traffic_light' | 'subway' | 'blueprint',
     dragPath: GridCoord[],
     motorwayStart: GridCoord | null
   ) {
@@ -1688,7 +1702,7 @@ export class GameRenderer {
 
   private renderInteractions(
     hoverCoord: GridCoord | null,
-    currentTool: 'draw' | 'erase' | 'motorway' | 'roundabout' | 'traffic_light' | 'subway' | 'blueprint',
+    currentTool: 'draw' | 'erase' | 'pan' | 'motorway' | 'roundabout' | 'traffic_light' | 'subway' | 'blueprint',
     dragPath: GridCoord[],
     motorwayStart: GridCoord | null
   ) {
@@ -1873,6 +1887,57 @@ export class GameRenderer {
         this.ctx.fill();
       }
     }
+
+    // Touch Target Reticle Halo & Offset Floating Sight (visible above fingertip on touch devices)
+    if (this.isTouchActive && hoverCoord && currentTool !== 'pan') {
+      const cx = (hoverCoord.x + 0.5) * tileSize;
+      const cy = (hoverCoord.y + 0.5) * tileSize;
+      const sightY = cy - tileSize * 1.25;
+      const reticleColor =
+        currentTool === 'erase'
+          ? '#ef4444'
+          : currentTool === 'blueprint'
+            ? '#38bdf8'
+            : '#10b981';
+
+      this.ctx.save();
+      // Tile highlight ring under finger
+      this.ctx.strokeStyle = reticleColor;
+      this.ctx.lineWidth = 2.5;
+      this.ctx.beginPath();
+      this.ctx.roundRect(
+        hoverCoord.x * tileSize + 2,
+        hoverCoord.y * tileSize + 2,
+        tileSize - 4,
+        tileSize - 4,
+        7
+      );
+      this.ctx.stroke();
+
+      // Tether line up to floating sight above fingertip
+      this.ctx.setLineDash([3, 3]);
+      this.ctx.lineWidth = 1.6;
+      this.ctx.beginPath();
+      this.ctx.moveTo(cx, cy - tileSize * 0.45);
+      this.ctx.lineTo(cx, sightY + 9);
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
+
+      // Floating sight badge above thumb
+      this.ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      this.ctx.beginPath();
+      this.ctx.arc(cx, sightY, 9, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.strokeStyle = reticleColor;
+      this.ctx.lineWidth = 2.2;
+      this.ctx.stroke();
+
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.beginPath();
+      this.ctx.arc(cx, sightY, 2.8, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.restore();
+    }
   }
 
   private renderHouses() {
@@ -1970,7 +2035,8 @@ export class GameRenderer {
       this.ctx.rotate(-driveAngle);
 
       // Scale up Tier 2 Apartments (1.12x) and Tier 3 High-Rise Skyscrapers (1.24x) so towers soar above 1x1 houses!
-      const tierVisualScale = tier === 3 ? 1.24 : tier === 2 ? 1.12 : 1.02;
+      const mobileBoost = this.isMobileView ? 1.14 : 1.0;
+      const tierVisualScale = (tier === 3 ? 1.24 : tier === 2 ? 1.12 : 1.02) * mobileBoost;
       this.ctx.scale(tierVisualScale, tierVisualScale);
 
       // Render crisp 3D residential architecture in selected style ('diorama' | 'clay' | 'modern')
@@ -2279,21 +2345,23 @@ export class GameRenderer {
               ? 'galleria'
               : 'store';
       const destSeed = (dest.x * 47 + dest.y * 23) % 1000;
-      const tierVisualScale = dest.isTrainStation
-        ? storeTier === 4
-          ? 1.16
-          : storeTier === 3
-            ? 1.11
-            : storeTier === 2
-              ? 1.07
-              : 1.04
-        : storeTier === 4
-          ? 1.16
-          : storeTier === 3
-            ? 1.08
-            : storeTier === 2
-              ? 1.04
-              : 1.0;
+      const mobileDestBoost = this.isMobileView ? 1.12 : 1.0;
+      const tierVisualScale =
+        (dest.isTrainStation
+          ? storeTier === 4
+            ? 1.16
+            : storeTier === 3
+              ? 1.11
+              : storeTier === 2
+                ? 1.07
+                : 1.04
+          : storeTier === 4
+            ? 1.16
+            : storeTier === 3
+              ? 1.08
+              : storeTier === 2
+                ? 1.04
+                : 1.0) * mobileDestBoost;
 
       this.ctx.save();
       this.ctx.scale(tierVisualScale, tierVisualScale);

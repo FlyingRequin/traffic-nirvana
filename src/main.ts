@@ -6,7 +6,7 @@ import { GameRenderer } from './renderer';
 import { sound } from './sound';
 import { DifficultyMode, GameMode, GridCoord, MapId, UpgradeOption } from './types';
 
-type ToolType = 'draw' | 'erase' | 'motorway' | 'roundabout' | 'traffic_light' | 'subway' | 'blueprint';
+type ToolType = 'draw' | 'erase' | 'pan' | 'motorway' | 'roundabout' | 'traffic_light' | 'subway' | 'blueprint';
 
 class MiniMotorwaysGame {
   public canvas: HTMLCanvasElement;
@@ -47,7 +47,9 @@ class MiniMotorwaysGame {
   private activeTouchPointers: Map<number, { x: number; y: number }> = new Map();
   private lastPinchDist: number = 0;
   private lastPinchMid: { x: number; y: number } = { x: 0, y: 0 };
+  private pendingTouchTapCoord: GridCoord | null = null;
   private toolDrawBtn: HTMLElement;
+  private toolPanBtn: HTMLElement | null = null;
   private toolRoundaboutBtn: HTMLElement;
   private toolTrafficLightBtn: HTMLElement;
   private toolMotorwayBtn: HTMLElement;
@@ -112,6 +114,7 @@ class MiniMotorwaysGame {
     this.btnSpeed2 = document.getElementById('btn-speed-2')!;
     this.btnSpeed4 = document.getElementById('btn-speed-4')!;
     this.toolDrawBtn = document.getElementById('tool-draw')!;
+    this.toolPanBtn = document.getElementById('tool-pan');
     this.toolRoundaboutBtn = document.getElementById('tool-roundabout')!;
     this.toolTrafficLightBtn = document.getElementById('tool-traffic-light')!;
     this.toolMotorwayBtn = document.getElementById('tool-motorway')!;
@@ -228,6 +231,7 @@ class MiniMotorwaysGame {
 
     this.bindEvents();
     this.renderer.resize();
+    document.body.classList.toggle('ios-mobile', this.renderer.isMobileView);
     this.updateHUD();
     void StatusBar.hide().catch(() => {});
 
@@ -243,8 +247,23 @@ class MiniMotorwaysGame {
   }
 
   private bindEvents() {
-    window.addEventListener('resize', () => this.renderer.resize());
+    window.addEventListener('resize', () => {
+      this.renderer.resize();
+      document.body.classList.toggle('ios-mobile', this.renderer.isMobileView);
+    });
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Auto-pause and persist settings when app is backgrounded on iOS / mobile
+    const onAppBackground = () => {
+      this.saveSettings();
+      if (!this.inMenu && !this.level.gameOver && !this.level.isPaused) {
+        this.togglePause();
+      }
+    };
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) onAppBackground();
+    });
+    window.addEventListener('pagehide', onAppBackground);
 
     this.canvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     this.canvas.addEventListener('pointermove', (e) => this.onPointerMove(e));
@@ -343,7 +362,14 @@ class MiniMotorwaysGame {
     document.getElementById('btn-copy-postcard')?.addEventListener('click', () => this.copyPostcard());
     document.getElementById('btn-download-postcard')?.addEventListener('click', () => this.downloadPostcard());
 
+    document.getElementById('btn-env-toggle')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sound.triggerHaptic('light');
+      document.getElementById('env-control-group')?.classList.toggle('mobile-open');
+    });
+
     this.toolDrawBtn.addEventListener('click', () => this.setTool('draw'));
+    this.toolPanBtn?.addEventListener('click', () => this.setTool('pan'));
     this.toolRoundaboutBtn.addEventListener('click', () => this.setTool('roundabout'));
     this.toolTrafficLightBtn.addEventListener('click', () => this.setTool('traffic_light'));
     this.toolMotorwayBtn.addEventListener('click', () => this.setTool('motorway'));
@@ -575,6 +601,7 @@ class MiniMotorwaysGame {
   private setTool(tool: ToolType) {
     this.currentTool = tool;
     this.toolDrawBtn.classList.toggle('active', tool === 'draw');
+    this.toolPanBtn?.classList.toggle('active', tool === 'pan');
     this.toolRoundaboutBtn.classList.toggle('active', tool === 'roundabout');
     this.toolTrafficLightBtn.classList.toggle('active', tool === 'traffic_light');
     this.toolMotorwayBtn.classList.toggle('active', tool === 'motorway');
@@ -594,7 +621,9 @@ class MiniMotorwaysGame {
       }
     }
 
-    if (tool === 'motorway') {
+    if (tool === 'pan') {
+      this.showToast('🖐️ Pan & Zoom Mode: Drag with 1 finger to pan, pinch with 2 fingers to zoom.');
+    } else if (tool === 'motorway') {
       this.showToast('Click and drag between two points to build an express Motorway!');
     } else if (tool === 'subway') {
       this.showToast('Click and drag between a suburb/High-Rise and a Store to build an underground Subway Line!');
@@ -775,14 +804,35 @@ class MiniMotorwaysGame {
     this.saveSettings();
   }
 
+  private snapTouchToNearbyDrivewayOrEntrance(coord: GridCoord) {
+    // Magnetic touch helper: if starting/dragging a road on touch within 1.35 tiles of an unconnected house driveway or store entrance, auto-connect it!
+    for (const h of this.level.houses) {
+      if (this.roadNetwork.hasRoad(h.driveway.x, h.driveway.y)) continue;
+      const d = Math.hypot(h.driveway.x - coord.x, h.driveway.y - coord.y);
+      if (d <= 1.35 || (Math.abs(h.x - coord.x) <= 1 && Math.abs(h.y - coord.y) <= 1)) {
+        this.roadNetwork.drawLineOfRoads(h.driveway, coord, (x, y) => this.level.isOccupied(x, y));
+      }
+    }
+    for (const dest of this.level.destinations) {
+      if (this.roadNetwork.hasRoad(dest.entrance.x, dest.entrance.y)) continue;
+      const d = Math.hypot(dest.entrance.x - coord.x, dest.entrance.y - coord.y);
+      if (d <= 1.45) {
+        this.roadNetwork.drawLineOfRoads(dest.entrance, coord, (x, y) => this.level.isOccupied(x, y));
+      }
+    }
+  }
+
   private onPointerDown(e: PointerEvent) {
     sound.unlockAudio();
+    this.renderer.isTouchActive = e.pointerType === 'touch';
+    document.getElementById('env-control-group')?.classList.remove('mobile-open');
 
     if (e.pointerType === 'touch') {
       this.activeTouchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.activeTouchPointers.size >= 2) {
-        // Switch immediately into 2-finger pinch-to-zoom & pan gesture
+        // Switch immediately into 2-finger pinch-to-zoom & pan gesture without leaving stray road tiles
         this.isPointerDown = false;
+        this.pendingTouchTapCoord = null;
         this.lastDragCoord = null;
         this.dragPath = [];
         this.motorwayStartCoord = null;
@@ -796,8 +846,8 @@ class MiniMotorwaysGame {
       }
     }
 
-    // Middle-click or Alt+Left-click pans the camera when zoomed
-    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+    // Pan tool, Middle-click, or Alt+Left-click pans the camera
+    if (this.currentTool === 'pan' || e.button === 1 || (e.button === 0 && e.altKey)) {
       this.isPanningCamera = true;
       this.lastPanScreen = { x: e.clientX, y: e.clientY };
       return;
@@ -808,12 +858,14 @@ class MiniMotorwaysGame {
     this.isPointerDown = true;
     this.activePointerButton = e.button;
     const coord = this.renderer.screenToGrid(e.clientX, e.clientY);
+    this.hoverCoord = coord;
     this.lastDragCoord = coord;
     this.dragPath = [coord];
+    const hitRadius = e.pointerType === 'touch' ? 2.2 : 1.0;
 
     // Right-click or Erase tool
     if (e.button === 2 || this.currentTool === 'erase') {
-      const nearSubway = this.roadNetwork.getSubwayNear(coord.x, coord.y);
+      const nearSubway = this.roadNetwork.getSubwayNear(coord.x, coord.y, hitRadius);
       if (nearSubway) {
         this.roadNetwork.removeSubway(nearSubway.id);
         this.showToast('Subway line reclaimed.');
@@ -821,10 +873,12 @@ class MiniMotorwaysGame {
         return;
       }
 
-      const nearMotorway = this.roadNetwork.getMotorwayNear(coord.x, coord.y);
+      const nearMotorway = this.roadNetwork.getMotorwayNear(coord.x, coord.y, hitRadius);
       if (nearMotorway) {
         this.roadNetwork.removeMotorway(nearMotorway.id);
         this.showToast('Motorway reclaimed.');
+      } else if (e.pointerType === 'touch') {
+        this.pendingTouchTapCoord = coord;
       } else {
         this.roadNetwork.removeRoad(coord.x, coord.y, (x, y) => this.traffic.isCarOnTile(x, y));
       }
@@ -847,21 +901,25 @@ class MiniMotorwaysGame {
     }
 
     if (this.currentTool === 'traffic_light') {
-      const res = this.roadNetwork.toggleTrafficLight(coord.x, coord.y);
+      const res = this.roadNetwork.toggleTrafficLight(
+        coord.x,
+        coord.y,
+        e.pointerType === 'touch' ? 1.6 : 0
+      );
       if (res === 'placed') {
         this.showToast('Traffic Light installed on road!');
         this.setTool('draw');
       } else if (res === 'removed') {
         this.showToast('Traffic Light reclaimed.');
       } else {
-        this.showToast('Click on an existing road tile to place a Traffic Light.');
+        this.showToast('Tap on an existing road tile to place a Traffic Light.');
       }
       this.updateHUD();
       return;
     }
 
     if (this.currentTool === 'motorway') {
-      const existing = this.roadNetwork.getMotorwayNear(coord.x, coord.y);
+      const existing = this.roadNetwork.getMotorwayNear(coord.x, coord.y, hitRadius);
       if (existing) {
         const dStart = Math.hypot(existing.start.x - coord.x, existing.start.y - coord.y);
         const dEnd = Math.hypot(existing.end.x - coord.x, existing.end.y - coord.y);
@@ -871,7 +929,7 @@ class MiniMotorwaysGame {
         return;
       }
       if (this.roadNetwork.motorwaysRemaining <= 0) {
-        this.showToast('No Motorways remaining! Click an existing Motorway ramp to move it.');
+        this.showToast('No Motorways remaining! Tap an existing Motorway ramp to move it.');
         return;
       }
       this.motorwayStartCoord = coord;
@@ -879,7 +937,7 @@ class MiniMotorwaysGame {
     }
 
     if (this.currentTool === 'subway') {
-      const existingSub = this.roadNetwork.getSubwayNear(coord.x, coord.y);
+      const existingSub = this.roadNetwork.getSubwayNear(coord.x, coord.y, hitRadius);
       if (existingSub) {
         const dStart = Math.hypot(existingSub.start.x - coord.x, existingSub.start.y - coord.y);
         const dEnd = Math.hypot(existingSub.end.x - coord.x, existingSub.end.y - coord.y);
@@ -890,7 +948,7 @@ class MiniMotorwaysGame {
         return;
       }
       if (this.roadNetwork.subwaysRemaining <= 0) {
-        this.showToast('No Subway lines remaining! Click an existing Subway station to move it.');
+        this.showToast('No Subway lines remaining! Tap an existing Subway station to move it.');
         return;
       }
       const tile = this.roadNetwork.getTileType(coord.x, coord.y);
@@ -938,8 +996,13 @@ class MiniMotorwaysGame {
       return;
     }
 
-    this.roadNetwork.placeRoad(coord.x, coord.y, (x, y) => this.level.isOccupied(x, y));
-    this.updateHUD();
+    if (e.pointerType === 'touch') {
+      // Defer initial touch road placement until drag or single-finger lift so 2-finger pinch never drops stray road tiles!
+      this.pendingTouchTapCoord = coord;
+    } else {
+      this.roadNetwork.placeRoad(coord.x, coord.y, (x, y) => this.level.isOccupied(x, y));
+      this.updateHUD();
+    }
   }
 
   private onPointerMove(e: PointerEvent) {
@@ -1008,6 +1071,17 @@ class MiniMotorwaysGame {
     const isErase = this.activePointerButton === 2 || this.currentTool === 'erase';
 
     if (coord.x !== this.lastDragCoord.x || coord.y !== this.lastDragCoord.y) {
+      if (this.pendingTouchTapCoord) {
+        if (!isErase) {
+          this.snapTouchToNearbyDrivewayOrEntrance(this.pendingTouchTapCoord);
+          this.roadNetwork.placeRoad(
+            this.pendingTouchTapCoord.x,
+            this.pendingTouchTapCoord.y,
+            (x, y) => this.level.isOccupied(x, y)
+          );
+        }
+        this.pendingTouchTapCoord = null;
+      }
       if (isErase) {
         this.roadNetwork.eraseLineOfRoads(this.lastDragCoord, coord, (x, y) =>
           this.traffic.isCarOnTile(x, y)
@@ -1016,6 +1090,9 @@ class MiniMotorwaysGame {
         this.roadNetwork.drawLineOfRoads(this.lastDragCoord, coord, (x, y) =>
           this.level.isOccupied(x, y)
         );
+        if (e.pointerType === 'touch') {
+          this.snapTouchToNearbyDrivewayOrEntrance(coord);
+        }
       }
       this.lastDragCoord = coord;
       this.dragPath.push(coord);
@@ -1028,6 +1105,7 @@ class MiniMotorwaysGame {
       const wasMultiTouch = this.activeTouchPointers.size >= 2;
       this.activeTouchPointers.delete(e.pointerId);
       if (wasMultiTouch) {
+        this.pendingTouchTapCoord = null;
         if (this.activeTouchPointers.size < 2) {
           this.lastPinchDist = 0;
         }
@@ -1039,7 +1117,22 @@ class MiniMotorwaysGame {
       this.isPanningCamera = false;
       return;
     }
+
+    if (this.pendingTouchTapCoord) {
+      const tap = this.pendingTouchTapCoord;
+      this.pendingTouchTapCoord = null;
+      if (this.currentTool === 'erase') {
+        this.roadNetwork.removeRoad(tap.x, tap.y, (x, y) => this.traffic.isCarOnTile(x, y));
+      } else if (this.currentTool === 'draw') {
+        this.snapTouchToNearbyDrivewayOrEntrance(tap);
+        this.roadNetwork.placeRoad(tap.x, tap.y, (x, y) => this.level.isOccupied(x, y));
+      }
+    }
+
     this.isPointerDown = false;
+    if (e.pointerType === 'touch') {
+      this.hoverCoord = null;
+    }
 
     if (this.currentTool === 'motorway' && this.motorwayStartCoord && this.hoverCoord) {
       const dist = Math.hypot(
@@ -1128,6 +1221,30 @@ class MiniMotorwaysGame {
     this.motorwaysCountEl.innerText = `${this.roadNetwork.motorwaysRemaining}`;
     this.subwaysCountEl.innerText = `${this.roadNetwork.subwaysRemaining}`;
     this.blueprintCountBadge.innerText = `${this.roadNetwork.blueprintRoads.size}`;
+
+    // Mark zero-count inventory items so mobile dock can compactly hide/collapse unused badges
+    this.bridgesCountEl.closest('.inventory-item')?.classList.toggle('zero-count', this.roadNetwork.bridgesRemaining <= 0);
+    this.tunnelsCountEl.closest('.inventory-item')?.classList.toggle('zero-count', this.roadNetwork.tunnelsRemaining <= 0);
+    this.toolRoundaboutBtn.classList.toggle(
+      'zero-count',
+      this.roadNetwork.roundaboutsRemaining <= 0 && this.currentTool !== 'roundabout'
+    );
+    this.toolTrafficLightBtn.classList.toggle(
+      'zero-count',
+      this.roadNetwork.trafficLightsRemaining <= 0 && this.currentTool !== 'traffic_light'
+    );
+    this.toolMotorwayBtn.classList.toggle(
+      'zero-count',
+      this.roadNetwork.motorwaysRemaining <= 0 &&
+        this.roadNetwork.motorways.length === 0 &&
+        this.currentTool !== 'motorway'
+    );
+    this.toolSubwayBtn.classList.toggle(
+      'zero-count',
+      this.roadNetwork.subwaysRemaining <= 0 &&
+        this.roadNetwork.subways.length === 0 &&
+        this.currentTool !== 'subway'
+    );
 
     // Sync Live Solar, Season/Weather & Architectural Style HUD Badges
     const solarIconEl = document.getElementById('solar-icon');
@@ -1377,11 +1494,30 @@ class MiniMotorwaysGame {
     this.downloadPostcard();
   }
 
-  private downloadPostcard() {
+  private async downloadPostcard() {
     sound.triggerHaptic('light');
+    const filename = `traffic-nirvana-${this.currentMapId}-score${this.level.score}.png`;
+    if (this.renderer.isMobileView && navigator.share) {
+      try {
+        const res = await fetch(this.currentPostcardUrl);
+        const blob = await res.blob();
+        const file = new File([blob], filename, { type: 'image/png' });
+        if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'Traffic Nirvana Postcard',
+            text: `My city reached ${this.level.score} trips in Traffic Nirvana!`,
+          });
+          this.showToast('📤 Postcard shared!');
+          return;
+        }
+      } catch (err: any) {
+        if (err && err.name === 'AbortError') return;
+      }
+    }
     const a = document.createElement('a');
     a.href = this.currentPostcardUrl;
-    a.download = `traffic-nirvana-${this.currentMapId}-score${this.level.score}.png`;
+    a.download = filename;
     a.click();
     this.showToast('💾 Postcard saved to downloads!');
   }
