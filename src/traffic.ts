@@ -592,6 +592,12 @@ export class TrafficSimulation {
       return false;
     }
 
+    const currTileRoad = this.roadNetwork.getRoad(currTileX, currTileY);
+    // Do not interrupt a car mid-roundabout unless its remaining path was broken
+    if (currTileRoad && currTileRoad.isRoundabout && !forceOnNetworkEdit) {
+      return false;
+    }
+
     // If a Roundabout center island was placed right under the car, snap to nearest roundabout ring tile
     if (!this.roadNetwork.hasRoad(currTileX, currTileY)) {
       const isRoundaboutCenter = this.roadNetwork.roundabouts.some(
@@ -663,23 +669,45 @@ export class TrafficSimulation {
 
     if (!bestPath || !chosenTargetRoad) return false;
 
-    // Check if the car's existing rawGridPath is still valid or if it crosses a modified/roundabout tile
-    let oldPathInvalidOrRoundaboutChanged = false;
+    // Check if the car's existing rawGridPath is still valid and connected
+    let oldPathInvalid = false;
     let currIdxInOld = 0;
     for (let i = 0; i < car.rawGridPath.length; i++) {
       const pt = car.rawGridPath[i];
       if (pt.x === currTileX && pt.y === currTileY) {
         currIdxInOld = i;
       }
-      const r = this.roadNetwork.getRoad(pt.x, pt.y);
-      if (!r || r.isRoundabout) {
-        oldPathInvalidOrRoundaboutChanged = true;
-      }
     }
 
     const remainingOldPath = car.rawGridPath.slice(currIdxInOld);
+    for (let i = 0; i < remainingOldPath.length; i++) {
+      const pt = remainingOldPath[i];
+      const r = this.roadNetwork.getRoad(pt.x, pt.y);
+      if (!r || r.isDemolishing) {
+        oldPathInvalid = true;
+        break;
+      }
+      if (i < remainingOldPath.length - 1) {
+        const nextPt = remainingOldPath[i + 1];
+        const stepDx = nextPt.x - pt.x;
+        const stepDy = nextPt.y - pt.y;
+        if (Math.abs(stepDx) <= 1 && Math.abs(stepDy) <= 1) {
+          const dirObj = DIR8_OFFSETS.find((d) => d.dx === stepDx && d.dy === stepDy);
+          if (!dirObj || !r.connections[dirObj.dir]) {
+            oldPathInvalid = true;
+            break;
+          }
+        }
+      }
+    }
+
+    // If the car is currently on a roundabout and its remaining path is still valid, let it finish the roundabout smoothly
+    if (currTileRoad && currTileRoad.isRoundabout && !oldPathInvalid) {
+      return false;
+    }
+
     const oldCost =
-      remainingOldPath.length > 0
+      !oldPathInvalid && remainingOldPath.length > 0
         ? Pathfinding.getPathCost(remainingOldPath, this.roadNetwork.roads, congestionMap)
         : Infinity;
 
@@ -693,7 +721,7 @@ export class TrafficSimulation {
           p.y !== remainingOldPath[idx].y
       );
 
-    if (!oldPathInvalidOrRoundaboutChanged && (!pathDiffers || !isMeaningfullyBetter)) {
+    if (!oldPathInvalid && (!pathDiffers || !isMeaningfullyBetter)) {
       return false;
     }
 
@@ -713,13 +741,20 @@ export class TrafficSimulation {
       this.roadNetwork.roads
     );
 
-    // Advance currentPointIndex past points that are right on top of the car's current position
+    // Advance currentPointIndex past points that are right on top of or behind the car's current position
     let nextIdx = 1;
-    while (
-      nextIdx < newSmooth.length - 1 &&
-      Math.hypot(newSmooth[nextIdx].x - car.x, newSmooth[nextIdx].y - car.y) < 0.26
-    ) {
-      nextIdx++;
+    const cosA = Math.cos(car.angle);
+    const sinA = Math.sin(car.angle);
+    while (nextIdx < newSmooth.length - 1) {
+      const vx = newSmooth[nextIdx].x - car.x;
+      const vy = newSmooth[nextIdx].y - car.y;
+      const d = Math.hypot(vx, vy);
+      const forwardDot = vx * cosA + vy * sinA;
+      if (d < 0.28 || (nextIdx <= 6 && d < 0.75 && forwardDot < 0.05)) {
+        nextIdx++;
+      } else {
+        break;
+      }
     }
 
     car.rawGridPath = bestPath;
@@ -899,9 +934,8 @@ export class TrafficSimulation {
       const aheadTileX = Math.floor(car.x + cosHeading * 0.45);
       const aheadTileY = Math.floor(car.y + sinHeading * 0.45);
       const aheadRoad = this.roadNetwork.getRoad(aheadTileX, aheadTileY);
-      const onRoundabout = Boolean(
-        (currRoad && currRoad.isRoundabout) || (aheadRoad && aheadRoad.isRoundabout)
-      );
+      const isOnRoundabout = Boolean(currRoad && currRoad.isRoundabout);
+      const onRoundabout = Boolean(isOnRoundabout || (aheadRoad && aheadRoad.isRoundabout));
 
       // Slow down slightly through uncontrolled 3-way/4-way intersections (Roundabouts & Tier 2+ Arterials stay fast!)
       const currConnCount = currRoad
@@ -1000,18 +1034,22 @@ export class TrafficSimulation {
               desiredSpeed = 0;
             }
           }
-        } else if (headingAlignment > -0.45 && !onRoundabout) {
-          // PERPENDICULAR / CROSSING / TURNING CONFLICT AT INTERSECTIONS:
+        } else if (headingAlignment > -0.45 && !isOnRoundabout) {
+          // PERPENDICULAR / CROSSING / TURNING CONFLICT AT INTERSECTIONS OR ROUNDABOUT ENTRY:
+          // Cars entering a roundabout yield to cars already circulating on the roundabout (`otherOnRoundabout`).
+          const otherRoad = this.roadNetwork.getRoad(Math.floor(other.x), Math.floor(other.y));
+          const otherOnRoundabout = Boolean(otherRoad && otherRoad.isRoundabout);
           if (
             forwardProj > 0.02 &&
-            forwardProj < 0.46 &&
-            lateralOffset < 0.34 &&
-            otherDist < 0.48
+            forwardProj < 0.48 &&
+            lateralOffset < 0.36 &&
+            otherDist < 0.52
           ) {
             const otherStuckTime = other.stuckTimer || 0;
             const shouldYield =
-              carStuckTime <= otherStuckTime + 0.4 &&
-              (otherForwardProj < forwardProj - 0.04 || car.numericId > other.numericId);
+              otherOnRoundabout ||
+              (carStuckTime <= otherStuckTime + 0.4 &&
+                (otherForwardProj < forwardProj - 0.04 || car.numericId > other.numericId));
 
             if (shouldYield) {
               desiredSpeed = 0;

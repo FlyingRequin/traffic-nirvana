@@ -774,6 +774,53 @@ export class RoadNetwork {
     }
   }
 
+  /**
+   * Returns true if stepping from `(fromX, fromY)` to `(toX, toY)` on a roundabout centered at `(cx, cy)`
+   * follows the one-way counter-clockwise right-hand-drive rotary ring:
+   * (0,1) -> (1,1) -> (1,0) -> (1,-1) -> (0,-1) -> (-1,-1) -> (-1,0) -> (-1,1) -> (0,1)
+   */
+  public static isRoundaboutFlowStep(
+    cx: number,
+    cy: number,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number
+  ): boolean {
+    const rx = fromX - cx;
+    const ry = fromY - cy;
+    let nextRx = 0;
+    let nextRy = 0;
+    if (rx === 0 && ry === 1) {
+      nextRx = 1;
+      nextRy = 1;
+    } else if (rx === 1 && ry === 1) {
+      nextRx = 1;
+      nextRy = 0;
+    } else if (rx === 1 && ry === 0) {
+      nextRx = 1;
+      nextRy = -1;
+    } else if (rx === 1 && ry === -1) {
+      nextRx = 0;
+      nextRy = -1;
+    } else if (rx === 0 && ry === -1) {
+      nextRx = -1;
+      nextRy = -1;
+    } else if (rx === -1 && ry === -1) {
+      nextRx = -1;
+      nextRy = 0;
+    } else if (rx === -1 && ry === 0) {
+      nextRx = -1;
+      nextRy = 1;
+    } else if (rx === -1 && ry === 1) {
+      nextRx = 0;
+      nextRy = 1;
+    } else {
+      return false;
+    }
+    return toX - cx === nextRx && toY - cy === nextRy;
+  }
+
   private updateConnectionsForTile(x: number, y: number) {
     const road = this.getRoad(x, y);
     if (!road) return;
@@ -786,11 +833,30 @@ export class RoadNetwork {
     ];
 
     for (const { dir, opp, dx, dy } of orthoDirs) {
-      const neighbor = this.getRoad(x + dx, y + dy);
-      const connected = Boolean(neighbor);
-      road.connections[dir] = connected;
-      if (neighbor) {
-        neighbor.connections[opp] = connected;
+      const nx = x + dx;
+      const ny = y + dy;
+      const neighbor = this.getRoad(nx, ny);
+      if (!neighbor) {
+        road.connections[dir] = false;
+        continue;
+      }
+
+      const sameRoundabout =
+        road.isRoundabout &&
+        neighbor.isRoundabout &&
+        road.roundaboutCenter &&
+        neighbor.roundaboutCenter &&
+        road.roundaboutCenter.x === neighbor.roundaboutCenter.x &&
+        road.roundaboutCenter.y === neighbor.roundaboutCenter.y;
+
+      if (sameRoundabout && road.roundaboutCenter) {
+        const cx = road.roundaboutCenter.x;
+        const cy = road.roundaboutCenter.y;
+        road.connections[dir] = RoadNetwork.isRoundaboutFlowStep(cx, cy, x, y, nx, ny);
+        neighbor.connections[opp] = RoadNetwork.isRoundaboutFlowStep(cx, cy, nx, ny, x, y);
+      } else {
+        road.connections[dir] = true;
+        neighbor.connections[opp] = true;
       }
     }
 
@@ -809,7 +875,9 @@ export class RoadNetwork {
     ];
 
     for (const { dir, opp, dx, dy, ortho1, ortho2 } of diagDirs) {
-      const neighbor = this.getRoad(x + dx, y + dy);
+      const nx = x + dx;
+      const ny = y + dy;
+      const neighbor = this.getRoad(nx, ny);
       if (!neighbor) {
         road.connections[dir] = false;
         continue;
@@ -823,11 +891,18 @@ export class RoadNetwork {
         road.roundaboutCenter.x === neighbor.roundaboutCenter.x &&
         road.roundaboutCenter.y === neighbor.roundaboutCenter.y;
 
+      if (sameRoundabout) {
+        // Never connect diagonal chords across a roundabout; cars must follow the 8-tile rotary perimeter!
+        road.connections[dir] = false;
+        neighbor.connections[opp] = false;
+        continue;
+      }
+
       const hasOrthoBridge =
         this.hasRoad(x + ortho1[0], y + ortho1[1]) ||
         this.hasRoad(x + ortho2[0], y + ortho2[1]);
 
-      const shouldConnectDiag = Boolean(sameRoundabout) || !hasOrthoBridge;
+      const shouldConnectDiag = !hasOrthoBridge;
       road.connections[dir] = shouldConnectDiag;
       neighbor.connections[opp] = shouldConnectDiag;
     }

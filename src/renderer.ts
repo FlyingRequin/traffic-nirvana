@@ -1074,9 +1074,33 @@ export class GameRenderer {
     for (const rb of this.roadNetwork.roundabouts) {
       const rcx = (rb.center.x + 0.5) * tileSize;
       const rcy = (rb.center.y + 0.5) * tileSize;
+      const ringRadius = tileSize * 0.94;
       this.ctx.beginPath();
-      this.ctx.arc(rcx, rcy, tileSize * 0.94, 0, Math.PI * 2);
+      this.ctx.arc(rcx, rcy, ringRadius, 0, Math.PI * 2);
       this.ctx.stroke();
+
+      // Directional counter-clockwise rotary chevrons on the roundabout asphalt
+      this.ctx.save();
+      this.ctx.setLineDash([]);
+      this.ctx.lineWidth = 1.8;
+      this.ctx.lineCap = 'round';
+      this.ctx.lineJoin = 'round';
+      for (let k = 0; k < 4; k++) {
+        const theta = k * (Math.PI / 2) + Math.PI / 4;
+        const ax = rcx + Math.cos(theta) * ringRadius;
+        const ay = rcy + Math.sin(theta) * ringRadius;
+        const tangentAngle = theta - Math.PI / 2; // Counter-clockwise tangent
+        this.ctx.save();
+        this.ctx.translate(ax, ay);
+        this.ctx.rotate(tangentAngle);
+        this.ctx.beginPath();
+        this.ctx.moveTo(-3.2, -2.6);
+        this.ctx.lineTo(1.8, 0);
+        this.ctx.lineTo(-3.2, 2.6);
+        this.ctx.stroke();
+        this.ctx.restore();
+      }
+      this.ctx.restore();
     }
 
     for (const road of this.roadNetwork.roads.values()) {

@@ -28,9 +28,9 @@ export class Pathfinding {
       if (dist > 1.9) {
         total += dist / CONFIG.GAMEPLAY.MOTORWAY_SPEED_MULTIPLIER;
       } else {
-        const baseStep = road?.isRoundabout ? dist * 0.62 : dist;
+        const baseStep = road?.isRoundabout ? dist * 0.25 : dist;
         const cong = congestionMap?.get(key) || 0;
-        const congWeight = road?.isRoundabout ? cong * 0.3 : cong;
+        const congWeight = road?.isRoundabout ? cong * 0.25 : cong;
         total += baseStep + congWeight;
       }
     }
@@ -57,7 +57,9 @@ export class Pathfinding {
 
     interface QueueNode {
       coord: GridCoord;
-      key: string;
+      tileKey: string;
+      stateKey: string;
+      justEnteredRoundabout: boolean;
       gCost: number;
       fCost: number;
       parent: QueueNode | null;
@@ -70,7 +72,9 @@ export class Pathfinding {
 
     const startNode: QueueNode = {
       coord: start,
-      key: startKey,
+      tileKey: startKey,
+      stateKey: startKey,
+      justEnteredRoundabout: false,
       gCost: 0,
       fCost: h(start),
       parent: null,
@@ -88,7 +92,7 @@ export class Pathfinding {
 
       if (!current) break;
 
-      if (current.key === endKey) {
+      if (current.tileKey === endKey) {
         const path: GridCoord[] = [];
         let curr: QueueNode | null = current;
         while (curr) {
@@ -98,10 +102,10 @@ export class Pathfinding {
         return path;
       }
 
-      openSet.delete(current.key);
-      closedSet.add(current.key);
+      openSet.delete(current.stateKey);
+      closedSet.add(current.stateKey);
 
-      const currentRoad = roads.get(current.key);
+      const currentRoad = roads.get(current.tileKey);
       if (!currentRoad) continue;
 
       // 1. 8-Directional Surface Road Neighbors
@@ -110,26 +114,57 @@ export class Pathfinding {
 
         const nx = current.coord.x + dx;
         const ny = current.coord.y + dy;
-        const nKey = `${nx},${ny}`;
+        const nTileKey = `${nx},${ny}`;
 
-        if (closedSet.has(nKey)) continue;
-
-        const neighborRoad = roads.get(nKey);
+        const neighborRoad = roads.get(nTileKey);
         if (!neighborRoad) continue;
         if (neighborRoad.isDemolishing) continue;
 
-        // Roundabouts have lower traversal friction and resist congestion penalties
-        const congPenalty = congestionMap?.get(nKey) || 0;
+        // If the car just entered a roundabout tile from an external road, prevent it from immediately
+        // turning clockwise (left) or U-turning out of that same corner tile without circulating around the ring!
+        if (
+          current.justEnteredRoundabout &&
+          currentRoad.isRoundabout &&
+          currentRoad.roundaboutCenter &&
+          !neighborRoad.isRoundabout &&
+          current.parent
+        ) {
+          const rcx = currentRoad.roundaboutCenter.x;
+          const rcy = currentRoad.roundaboutCenter.y;
+          const v1x = current.parent.coord.x - rcx;
+          const v1y = current.parent.coord.y - rcy;
+          const v2x = nx - rcx;
+          const v2y = ny - rcy;
+          const cross = v1x * v2y - v1y * v2x;
+          // In screen coords (+x East, +y South), counter-clockwise around (rcx, rcy) has cross < 0
+          if (cross >= -0.01) {
+            continue;
+          }
+        }
+
+        const enteringRoundabout =
+          Boolean(neighborRoad.isRoundabout) &&
+          (!currentRoad.isRoundabout ||
+            currentRoad.roundaboutCenter?.x !== neighborRoad.roundaboutCenter?.x ||
+            currentRoad.roundaboutCenter?.y !== neighborRoad.roundaboutCenter?.y);
+
+        const nStateKey = enteringRoundabout ? `${nTileKey}:entry` : nTileKey;
+        if (closedSet.has(nStateKey)) continue;
+
+        // Roundabouts have low traversal cost and resist congestion penalties
+        const congPenalty = congestionMap?.get(nTileKey) || 0;
         const stepCost = neighborRoad.isRoundabout
-          ? cost * 0.62 + congPenalty * 0.3
+          ? cost * 0.25 + congPenalty * 0.25
           : cost + congPenalty;
         const gScore = current.gCost + stepCost;
-        const existing = openSet.get(nKey);
+        const existing = openSet.get(nStateKey);
 
         if (!existing || gScore < existing.gCost) {
-          openSet.set(nKey, {
+          openSet.set(nStateKey, {
             coord: { x: nx, y: ny },
-            key: nKey,
+            tileKey: nTileKey,
+            stateKey: nStateKey,
+            justEnteredRoundabout: enteringRoundabout,
             gCost: gScore,
             fCost: gScore + h({ x: nx, y: ny }),
             parent: current,
@@ -157,7 +192,9 @@ export class Pathfinding {
           if (!existing || gScore < existing.gCost) {
             openSet.set(mKey, {
               coord: targetEnd,
-              key: mKey,
+              tileKey: mKey,
+              stateKey: mKey,
+              justEnteredRoundabout: false,
               gCost: gScore,
               fCost: gScore + h(targetEnd),
               parent: current,
@@ -185,19 +222,40 @@ export class Pathfinding {
     }
 
     const laneOffset = CONFIG.GAMEPLAY.LANE_OFFSET;
-    const rawCenters: WorldPoint[] = [
+    const rawCenters: Array<WorldPoint & { rbCenter?: GridCoord }> = [
       originWorld,
-      ...gridPath.map((c) => {
+      ...gridPath.map((c, idx) => {
         const road = roads?.get(`${c.x},${c.y}`);
         if (road && road.isRoundabout && road.roundaboutCenter) {
           const rcx = road.roundaboutCenter.x + 0.5;
           const rcy = road.roundaboutCenter.y + 0.5;
-          const vx = c.x + 0.5 - rcx;
-          const vy = c.y + 0.5 - rcy;
-          const vLen = Math.hypot(vx, vy) || 1;
+          let angle = Math.atan2(c.y + 0.5 - rcy, c.x + 0.5 - rcx);
+
+          const prevCoord = idx > 0 ? gridPath[idx - 1] : null;
+          const nextCoord = idx < gridPath.length - 1 ? gridPath[idx + 1] : null;
+          const prevRoad = prevCoord ? roads?.get(`${prevCoord.x},${prevCoord.y}`) : undefined;
+          const nextRoad = nextCoord ? roads?.get(`${nextCoord.x},${nextCoord.y}`) : undefined;
+
+          const samePrevRb =
+            prevRoad?.isRoundabout &&
+            prevRoad.roundaboutCenter?.x === road.roundaboutCenter.x &&
+            prevRoad.roundaboutCenter?.y === road.roundaboutCenter.y;
+          const sameNextRb =
+            nextRoad?.isRoundabout &&
+            nextRoad.roundaboutCenter?.x === road.roundaboutCenter.x &&
+            nextRoad.roundaboutCenter?.y === road.roundaboutCenter.y;
+
+          // Align entry & exit nodes on the r=0.94 ring with the approaching/departing right-hand lane (arcsin(0.13/0.94) ≈ 0.14 rad)
+          if (!samePrevRb && sameNextRb) {
+            angle -= 0.14;
+          } else if (samePrevRb && !sameNextRb) {
+            angle += 0.14;
+          }
+
           return {
-            x: rcx + (vx / vLen) * 0.94,
-            y: rcy + (vy / vLen) * 0.94,
+            x: rcx + Math.cos(angle) * 0.94,
+            y: rcy + Math.sin(angle) * 0.94,
+            rbCenter: road.roundaboutCenter,
           };
         }
         return { x: c.x + 0.5, y: c.y + 0.5 };
@@ -206,7 +264,7 @@ export class Pathfinding {
     ];
 
     // Compute right-hand lane offset control points for all intermediate road nodes
-    const offsetNodes: WorldPoint[] = [];
+    const offsetNodes: Array<WorldPoint & { rbCenter?: GridCoord }> = [];
     for (let i = 0; i < rawCenters.length; i++) {
       if (i === 0 || i === rawCenters.length - 1) {
         // Keep exact origin (driveway bay) and goal (parking stall)
@@ -214,8 +272,14 @@ export class Pathfinding {
         continue;
       }
 
-      const prev = rawCenters[i - 1];
       const curr = rawCenters[i];
+      if (curr.rbCenter) {
+        // Roundabout ring is a one-way counter-clockwise track at r=0.94; keep exact ring coordinate
+        offsetNodes.push({ ...curr });
+        continue;
+      }
+
+      const prev = rawCenters[i - 1];
       const next = rawCenters[i + 1];
 
       let dx1 = curr.x - prev.x;
@@ -294,13 +358,32 @@ export class Pathfinding {
         y: curr.y + (next.y - curr.y) * 0.48,
       };
 
+      const isInternalRbArc =
+        curr.rbCenter &&
+        prev.rbCenter &&
+        next.rbCenter &&
+        curr.rbCenter.x === prev.rbCenter.x &&
+        curr.rbCenter.y === prev.rbCenter.y &&
+        curr.rbCenter.x === next.rbCenter.x &&
+        curr.rbCenter.y === next.rbCenter.y;
+
       // Sample 5 points along the quadratic bezier corner for ultra-smooth turning
       const samples = 5;
       for (let s = 1; s <= samples; s++) {
         const t = s / samples;
         const inv = 1 - t;
-        const bx = inv * inv * pStart.x + 2 * inv * t * curr.x + t * t * pEnd.x;
-        const by = inv * inv * pStart.y + 2 * inv * t * curr.y + t * t * pEnd.y;
+        let bx = inv * inv * pStart.x + 2 * inv * t * curr.x + t * t * pEnd.x;
+        let by = inv * inv * pStart.y + 2 * inv * t * curr.y + t * t * pEnd.y;
+
+        // Project internal roundabout circulation points onto the exact r=0.94 circular track
+        if (isInternalRbArc && curr.rbCenter) {
+          const rcx = curr.rbCenter.x + 0.5;
+          const rcy = curr.rbCenter.y + 0.5;
+          const ang = Math.atan2(by - rcy, bx - rcx);
+          bx = rcx + Math.cos(ang) * 0.94;
+          by = rcy + Math.sin(ang) * 0.94;
+        }
+
         smooth.push({ x: bx, y: by });
       }
     }
