@@ -253,9 +253,10 @@ class MiniMotorwaysGame {
     });
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // Auto-pause and persist settings when app is backgrounded on iOS / mobile
+    // Auto-pause and persist settings + active city session when app is backgrounded on iOS / mobile
     const onAppBackground = () => {
       this.saveSettings();
+      this.saveActiveSession();
       if (!this.inMenu && !this.level.gameOver && !this.level.isPaused) {
         this.togglePause();
       }
@@ -333,6 +334,7 @@ class MiniMotorwaysGame {
     });
 
     document.getElementById('btn-start')!.addEventListener('click', () => this.startFromMenu());
+    document.getElementById('btn-resume-saved')?.addEventListener('click', () => this.resumeSavedSession());
     document.getElementById('btn-daily-challenge')?.addEventListener('click', () => this.startDailyChallenge());
     document.getElementById('btn-solar')?.addEventListener('click', () => this.cycleSolarLighting());
     document.getElementById('btn-weather')?.addEventListener('click', () => this.cycleSeasonWeather());
@@ -346,11 +348,15 @@ class MiniMotorwaysGame {
       this.closePauseMenu();
     });
     document.getElementById('btn-restart-city')!.addEventListener('click', () => {
+      this.clearActiveSession();
       this.pauseMenu.classList.add('hidden');
       this.restartGame();
     });
     document.querySelectorAll<HTMLElement>('.btn-main-menu').forEach((btn) =>
-      btn.addEventListener('click', () => this.showStartScreen())
+      btn.addEventListener('click', () => {
+        this.saveActiveSession();
+        this.showStartScreen();
+      })
     );
 
     // Heatmap & Postcard Photo Mode handlers
@@ -519,8 +525,166 @@ class MiniMotorwaysGame {
     }
   }
 
+  private saveActiveSession() {
+    if (this.inMenu || this.level.gameOver) return;
+    if (this.level.score <= 0 && this.roadNetwork.roads.size === 0) return;
+    try {
+      const roadCoords: Array<{ x: number; y: number; hasLight?: boolean }> = [];
+      for (const r of this.roadNetwork.roads.values()) {
+        if (r.isRoundabout) continue;
+        roadCoords.push({ x: r.x, y: r.y, hasLight: r.hasTrafficLight || undefined });
+      }
+      const snapshot = {
+        v: 1,
+        mapId: this.currentMapId,
+        gameMode: this.level.gameMode,
+        difficultyMode: this.level.difficultyMode,
+        score: this.level.score,
+        currentDay: this.level.currentDay,
+        dayTimer: this.level.dayTimer,
+        roadsRemaining: this.roadNetwork.roadsRemaining,
+        bridgesRemaining: this.roadNetwork.bridgesRemaining,
+        tunnelsRemaining: this.roadNetwork.tunnelsRemaining,
+        roundaboutsRemaining: this.roadNetwork.roundaboutsRemaining,
+        trafficLightsRemaining: this.roadNetwork.trafficLightsRemaining,
+        motorwaysRemaining: this.roadNetwork.motorwaysRemaining,
+        subwaysRemaining: this.roadNetwork.subwaysRemaining,
+        arterialLevel: this.roadNetwork.arterialLevel,
+        roundabouts: this.roadNetwork.roundabouts.map((rb) => ({ x: rb.center.x, y: rb.center.y })),
+        roadCoords,
+        motorways: this.roadNetwork.motorways.map((m) => ({ start: m.start, end: m.end })),
+        subways: this.roadNetwork.subways.map((s) => ({ start: s.start, end: s.end })),
+        houses: this.level.houses.map((h) => ({ ...h, availableCars: h.totalCars })),
+        destinations: this.level.destinations.map((d) => ({
+          ...d,
+          claimedPins: 0,
+          activeParkingStalls: [false, false, false, false],
+        })),
+      };
+      localStorage.setItem('tn-active-session', JSON.stringify(snapshot));
+    } catch {
+      /* ignore storage errors */
+    }
+  }
+
+  private clearActiveSession() {
+    try {
+      localStorage.removeItem('tn-active-session');
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private getSavedSessionMeta(): { mapName: string; week: number; score: number } | null {
+    try {
+      const raw = localStorage.getItem('tn-active-session');
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      if (!s || s.v !== 1 || !s.mapId) return null;
+      const mapName = MiniMotorwaysGame.MAP_NAMES[s.mapId as MapId] || 'River Valley';
+      const week = Math.floor(((s.currentDay || 1) - 1) / 7) + 1;
+      return { mapName, week, score: s.score || 0 };
+    } catch {
+      return null;
+    }
+  }
+
+  public resumeSavedSession() {
+    try {
+      const raw = localStorage.getItem('tn-active-session');
+      if (!raw) return;
+      const s = JSON.parse(raw);
+      if (!s || s.v !== 1 || !s.mapId) return;
+
+      sound.unlockAudio();
+      this.currentMapId = s.mapId;
+      this.selectedGameMode = s.gameMode || 'standard';
+      this.selectedDifficulty = s.difficultyMode || 'normal';
+      this.inMenu = false;
+      this.startScreen.classList.add('hidden');
+      document.body.classList.remove('in-menu');
+
+      this.restartGame(false);
+      this.level.gameMode = this.selectedGameMode;
+      this.level.difficultyMode = this.selectedDifficulty;
+      this.level.score = s.score || 0;
+      this.level.currentDay = s.currentDay || 1;
+      this.level.dayTimer = s.dayTimer || 0;
+
+      if (Array.isArray(s.houses) && s.houses.length > 0) {
+        this.level.houses = s.houses;
+      }
+      if (Array.isArray(s.destinations) && s.destinations.length > 0) {
+        this.level.destinations = s.destinations;
+      }
+
+      this.roadNetwork.roadsRemaining = 9999;
+      this.roadNetwork.bridgesRemaining = 999;
+      this.roadNetwork.tunnelsRemaining = 999;
+      this.roadNetwork.roundaboutsRemaining = 999;
+      this.roadNetwork.trafficLightsRemaining = 999;
+      this.roadNetwork.motorwaysRemaining = 999;
+      this.roadNetwork.subwaysRemaining = 999;
+
+      if (Array.isArray(s.roundabouts)) {
+        for (const rb of s.roundabouts) {
+          this.roadNetwork.placeRoundabout(rb.x, rb.y, () => false);
+        }
+      }
+      if (Array.isArray(s.roadCoords)) {
+        for (const rc of s.roadCoords) {
+          this.roadNetwork.placeRoad(rc.x, rc.y, () => false, true);
+          if (rc.hasLight) {
+            const tile = this.roadNetwork.getRoad(rc.x, rc.y);
+            if (tile) tile.hasTrafficLight = true;
+          }
+        }
+      }
+      if (Array.isArray(s.motorways)) {
+        for (const m of s.motorways) {
+          this.roadNetwork.placeMotorway(m.start, m.end);
+        }
+      }
+      if (Array.isArray(s.subways)) {
+        for (const sub of s.subways) {
+          this.roadNetwork.placeSubway(sub.start, sub.end);
+        }
+      }
+
+      this.roadNetwork.roadsRemaining = s.roadsRemaining ?? 30;
+      this.roadNetwork.bridgesRemaining = s.bridgesRemaining ?? 1;
+      this.roadNetwork.tunnelsRemaining = s.tunnelsRemaining ?? 1;
+      this.roadNetwork.roundaboutsRemaining = s.roundaboutsRemaining ?? 0;
+      this.roadNetwork.trafficLightsRemaining = s.trafficLightsRemaining ?? 0;
+      this.roadNetwork.motorwaysRemaining = s.motorwaysRemaining ?? 0;
+      this.roadNetwork.subwaysRemaining = s.subwaysRemaining ?? 0;
+      this.roadNetwork.arterialLevel = s.arterialLevel ?? 0;
+
+      this.level.isPaused = false;
+      this.setSpeed(1);
+      this.renderer.resetCamera();
+      this.updateHUD();
+      this.showToast(
+        `▶️ Resumed ${MiniMotorwaysGame.MAP_NAMES[this.currentMapId]} (Week ${this.level.getWeekNumber()} · ${this.level.score} trips)!`
+      );
+    } catch {
+      this.clearActiveSession();
+    }
+  }
+
   /** Sync map cards, toggles, best scores and labels with current state. */
   private syncMenuUI() {
+    const resumeBtn = document.getElementById('btn-resume-saved');
+    const resumeLbl = document.getElementById('resume-saved-label');
+    const savedMeta = this.getSavedSessionMeta();
+    if (resumeBtn && resumeLbl) {
+      if (savedMeta) {
+        resumeBtn.classList.remove('hidden');
+        resumeLbl.innerText = `▶️ Resume ${savedMeta.mapName} (Wk ${savedMeta.week} · ${savedMeta.score} trips)`;
+      } else {
+        resumeBtn.classList.add('hidden');
+      }
+    }
     document.querySelectorAll<HTMLElement>('.map-card').forEach((card) => {
       card.classList.toggle('selected', card.dataset.map === this.currentMapId);
     });
@@ -589,6 +753,7 @@ class MiniMotorwaysGame {
     if (this.inMenu || this.level.gameOver) return;
     this.wasPausedBeforeMenu = this.level.isPaused;
     this.level.isPaused = true;
+    this.saveActiveSession();
     this.syncMenuUI();
     this.pauseMenu.classList.remove('hidden');
   }
@@ -1427,6 +1592,7 @@ class MiniMotorwaysGame {
         }
         this.upgradeModal.classList.add('hidden');
         this.level.completeUpgrade();
+        this.saveActiveSession();
         this.updateHUD();
       });
 
@@ -1437,6 +1603,7 @@ class MiniMotorwaysGame {
   }
 
   private showGameOver() {
+    this.clearActiveSession();
     this.finalScoreEl.innerText = `${this.level.score}`;
     this.finalDaysEl.innerText = `${this.level.currentDay}`;
     const descEl = document.getElementById('game-over-desc');
