@@ -1586,18 +1586,22 @@ body.night .daily-challenge-btn {
    iPhone/mobile touch viewports (.ios-mobile).
    ============================================================================ */
 .mobile-only-group,
-.mobile-pan-tool {
+.mobile-pan-tool,
+.mobile-undo-tool {
   display: none;
 }
 
-.pan-circle {
-  background: rgba(56, 189, 248, 0.22);
-  color: #38bdf8;
+.undo-circle {
+  background: rgba(148, 163, 184, 0.22);
+  color: #e2e8f0;
 }
 
-#tool-pan.active .pan-circle {
-  background: #0284c7;
-  color: #ffffff;
+body.ios-mobile .mobile-undo-tool {
+  display: flex;
+}
+
+body.ios-mobile .mobile-undo-tool.undo-empty {
+  opacity: 0.35;
 }
 
 body.ios-mobile .mobile-only-group {
@@ -1605,7 +1609,19 @@ body.ios-mobile .mobile-only-group {
 }
 
 body.ios-mobile .mobile-pan-tool {
-  display: flex;
+  display: none;
+}
+
+/* Bottom-Left Thumb Arc for Pause & Speed (1x/2x/4x) on iPhone/iPad */
+body.ios-mobile .speed-control-group {
+  position: fixed;
+  left: max(12px, env(safe-area-inset-left) + 4px);
+  bottom: max(14px, env(safe-area-inset-bottom) + 6px);
+  z-index: 30;
+  height: 40px;
+  padding: 3px 4px;
+  border-radius: 20px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.28);
 }
 
 body.ios-mobile #hud-top {
@@ -1661,9 +1677,9 @@ body.ios-mobile #env-control-group.mobile-open .env-secondary-btn .env-btn-label
   font-size: 11px;
 }
 
-/* Compact Circular Icon Dock for iPhone */
+/* Compact Circular Icon Dock for iPhone (with Home Indicator breathing room) */
 body.ios-mobile #toolbar {
-  bottom: max(6px, env(safe-area-inset-bottom));
+  bottom: max(14px, env(safe-area-inset-bottom) + 6px);
   padding: 4px 8px;
   gap: 5px;
   border-radius: 20px;

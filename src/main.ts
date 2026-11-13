@@ -48,6 +48,14 @@ class MiniMotorwaysGame {
   private lastPinchDist: number = 0;
   private lastPinchMid: { x: number; y: number } = { x: 0, y: 0 };
   private pendingTouchTapCoord: GridCoord | null = null;
+  private touchGraceTimer: number | null = null;
+  private longPressTimer: number | null = null;
+  private longPressTriggered: boolean = false;
+  private touchDownScreen: { x: number; y: number } = { x: 0, y: 0 };
+  private lastEmptyTapTime: number = 0;
+  private lastEmptyTapPos: { x: number; y: number } = { x: 0, y: 0 };
+  private undoStack: Array<() => void> = [];
+  private btnUndo: HTMLElement | null = null;
   private toolDrawBtn: HTMLElement;
   private toolPanBtn: HTMLElement | null = null;
   private toolRoundaboutBtn: HTMLElement;
@@ -375,6 +383,8 @@ class MiniMotorwaysGame {
     });
 
     this.toolDrawBtn.addEventListener('click', () => this.setTool('draw'));
+    this.btnUndo = document.getElementById('btn-undo');
+    this.btnUndo?.addEventListener('click', () => this.performUndo());
     this.toolPanBtn?.addEventListener('click', () => this.setTool('pan'));
     this.toolRoundaboutBtn.addEventListener('click', () => this.setTool('roundabout'));
     this.toolTrafficLightBtn.addEventListener('click', () => this.setTool('traffic_light'));
@@ -987,6 +997,36 @@ class MiniMotorwaysGame {
     }
   }
 
+  private pushUndo(fn: () => void) {
+    this.undoStack.push(fn);
+    if (this.undoStack.length > 25) this.undoStack.shift();
+    this.btnUndo?.classList.toggle('undo-empty', this.undoStack.length === 0);
+  }
+
+  private performUndo() {
+    const fn = this.undoStack.pop();
+    this.btnUndo?.classList.toggle('undo-empty', this.undoStack.length === 0);
+    if (!fn) {
+      this.showToast('Nothing to undo');
+      return;
+    }
+    fn();
+    sound.triggerHaptic('medium');
+    this.updateHUD();
+    this.showToast('↩️ Undid last action');
+  }
+
+  private clearTouchTimers() {
+    if (this.touchGraceTimer !== null) {
+      clearTimeout(this.touchGraceTimer);
+      this.touchGraceTimer = null;
+    }
+    if (this.longPressTimer !== null) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
+  }
+
   private onPointerDown(e: PointerEvent) {
     sound.unlockAudio();
     this.renderer.isTouchActive = e.pointerType === 'touch';
@@ -994,8 +1034,17 @@ class MiniMotorwaysGame {
 
     if (e.pointerType === 'touch') {
       this.activeTouchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.activeTouchPointers.size === 3) {
+        // 3-Finger Tap = Instant Undo
+        this.clearTouchTimers();
+        this.isPointerDown = false;
+        this.pendingTouchTapCoord = null;
+        this.performUndo();
+        return;
+      }
       if (this.activeTouchPointers.size >= 2) {
         // Switch immediately into 2-finger pinch-to-zoom & pan gesture without leaving stray road tiles
+        this.clearTouchTimers();
         this.isPointerDown = false;
         this.pendingTouchTapCoord = null;
         this.lastDragCoord = null;
@@ -1009,6 +1058,8 @@ class MiniMotorwaysGame {
         };
         return;
       }
+      this.touchDownScreen = { x: e.clientX, y: e.clientY };
+      this.longPressTriggered = false;
     }
 
     // Pan tool, Middle-click, or Alt+Left-click pans the camera
@@ -1162,10 +1213,49 @@ class MiniMotorwaysGame {
     }
 
     if (e.pointerType === 'touch') {
-      // Defer initial touch road placement until drag or single-finger lift so 2-finger pinch never drops stray road tiles!
+      // 70ms grace window: defer initial touch road placement so a slightly staggered 2nd finger for pinch/pan never drops stray tiles
       this.pendingTouchTapCoord = coord;
+      this.clearTouchTimers();
+
+      // Long-press (~350ms) on an existing road/roundabout/light in Draw mode = Quick-Erase!
+      const existingRoad = this.roadNetwork.getRoad(coord.x, coord.y);
+      if (existingRoad && this.currentTool === 'draw') {
+        this.longPressTimer = window.setTimeout(() => {
+          if (!this.isPointerDown || this.activeTouchPointers.size !== 1) return;
+          this.longPressTriggered = true;
+          this.pendingTouchTapCoord = null;
+          this.isPointerDown = false;
+          this.roadNetwork.removeRoad(coord.x, coord.y, (x, y) => this.traffic.isCarOnTile(x, y));
+          sound.triggerHaptic('medium');
+          this.updateHUD();
+          this.showToast('🧹 Quick-erased!');
+        }, 350);
+      } else {
+        this.touchGraceTimer = window.setTimeout(() => {
+          this.touchGraceTimer = null;
+          if (this.pendingTouchTapCoord && this.isPointerDown && this.activeTouchPointers.size === 1) {
+            const tap = this.pendingTouchTapCoord;
+            const hadRoad = this.roadNetwork.hasRoad(tap.x, tap.y);
+            this.snapTouchToNearbyDrivewayOrEntrance(tap);
+            const placed = this.roadNetwork.placeRoad(tap.x, tap.y, (x, y) => this.level.isOccupied(x, y));
+            if (placed && !hadRoad) {
+              this.pushUndo(() =>
+                this.roadNetwork.removeRoad(tap.x, tap.y, (x, y) => this.traffic.isCarOnTile(x, y), true)
+              );
+            }
+            this.pendingTouchTapCoord = null;
+            this.updateHUD();
+          }
+        }, 70);
+      }
     } else {
-      this.roadNetwork.placeRoad(coord.x, coord.y, (x, y) => this.level.isOccupied(x, y));
+      const hadRoad = this.roadNetwork.hasRoad(coord.x, coord.y);
+      const placed = this.roadNetwork.placeRoad(coord.x, coord.y, (x, y) => this.level.isOccupied(x, y));
+      if (placed && !hadRoad) {
+        this.pushUndo(() =>
+          this.roadNetwork.removeRoad(coord.x, coord.y, (x, y) => this.traffic.isCarOnTile(x, y), true)
+        );
+      }
       this.updateHUD();
     }
   }
@@ -1208,6 +1298,16 @@ class MiniMotorwaysGame {
     this.hoverCoord = coord;
 
     if (!this.isPointerDown || !this.lastDragCoord) return;
+
+    if (
+      e.pointerType === 'touch' &&
+      Math.hypot(e.clientX - this.touchDownScreen.x, e.clientY - this.touchDownScreen.y) > 8
+    ) {
+      if (this.longPressTimer !== null) {
+        clearTimeout(this.longPressTimer);
+        this.longPressTimer = null;
+      }
+    }
     if (
       this.currentTool === 'motorway' ||
       this.currentTool === 'subway' ||
@@ -1267,6 +1367,7 @@ class MiniMotorwaysGame {
 
   private onPointerUp(e: PointerEvent) {
     if (e.pointerType === 'touch') {
+      this.clearTouchTimers();
       const wasMultiTouch = this.activeTouchPointers.size >= 2;
       this.activeTouchPointers.delete(e.pointerId);
       if (wasMultiTouch) {
@@ -1274,6 +1375,12 @@ class MiniMotorwaysGame {
         if (this.activeTouchPointers.size < 2) {
           this.lastPinchDist = 0;
         }
+        return;
+      }
+      if (this.longPressTriggered) {
+        this.longPressTriggered = false;
+        this.isPointerDown = false;
+        this.hoverCoord = null;
         return;
       }
     }
@@ -1289,8 +1396,34 @@ class MiniMotorwaysGame {
       if (this.currentTool === 'erase') {
         this.roadNetwork.removeRoad(tap.x, tap.y, (x, y) => this.traffic.isCarOnTile(x, y));
       } else if (this.currentTool === 'draw') {
+        // Double-tap on empty grass/water resets camera smoothly
+        const now = performance.now();
+        const isEmptyTile =
+          !this.roadNetwork.hasRoad(tap.x, tap.y) && !this.level.isOccupied(tap.x, tap.y);
+        if (
+          isEmptyTile &&
+          now - this.lastEmptyTapTime < 280 &&
+          Math.hypot(e.clientX - this.lastEmptyTapPos.x, e.clientY - this.lastEmptyTapPos.y) < 28
+        ) {
+          this.lastEmptyTapTime = 0;
+          this.renderer.resetCamera();
+          sound.triggerHaptic('light');
+          this.showToast('🎯 Camera reset');
+          this.isPointerDown = false;
+          this.hoverCoord = null;
+          return;
+        }
+        if (isEmptyTile) {
+          this.lastEmptyTapTime = now;
+          this.lastEmptyTapPos = { x: e.clientX, y: e.clientY };
+        }
         this.snapTouchToNearbyDrivewayOrEntrance(tap);
-        this.roadNetwork.placeRoad(tap.x, tap.y, (x, y) => this.level.isOccupied(x, y));
+        const placed = this.roadNetwork.placeRoad(tap.x, tap.y, (x, y) => this.level.isOccupied(x, y));
+        if (placed) {
+          this.pushUndo(() =>
+            this.roadNetwork.removeRoad(tap.x, tap.y, (x, y) => this.traffic.isCarOnTile(x, y), true)
+          );
+        }
       }
     }
 
