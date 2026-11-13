@@ -55,6 +55,7 @@ class MiniMotorwaysGame {
   private lastEmptyTapTime: number = 0;
   private lastEmptyTapPos: { x: number; y: number } = { x: 0, y: 0 };
   private undoStack: Array<() => void> = [];
+  private currentStrokeTiles: GridCoord[] = [];
   private btnUndo: HTMLElement | null = null;
   private toolDrawBtn: HTMLElement;
   private toolPanBtn: HTMLElement | null = null;
@@ -1339,11 +1340,20 @@ class MiniMotorwaysGame {
       if (this.pendingTouchTapCoord) {
         if (!isErase) {
           this.snapTouchToNearbyDrivewayOrEntrance(this.pendingTouchTapCoord);
-          this.roadNetwork.placeRoad(
+          const hadRoad = this.roadNetwork.hasRoad(
             this.pendingTouchTapCoord.x,
-            this.pendingTouchTapCoord.y,
-            (x, y) => this.level.isOccupied(x, y)
+            this.pendingTouchTapCoord.y
           );
+          if (
+            this.roadNetwork.placeRoad(
+              this.pendingTouchTapCoord.x,
+              this.pendingTouchTapCoord.y,
+              (x, y) => this.level.isOccupied(x, y)
+            ) &&
+            !hadRoad
+          ) {
+            this.currentStrokeTiles.push({ ...this.pendingTouchTapCoord });
+          }
         }
         this.pendingTouchTapCoord = null;
       }
@@ -1351,16 +1361,60 @@ class MiniMotorwaysGame {
         this.roadNetwork.eraseLineOfRoads(this.lastDragCoord, coord, (x, y) =>
           this.traffic.isCarOnTile(x, y)
         );
+        this.lastDragCoord = coord;
+        this.dragPath.push(coord);
       } else {
-        this.roadNetwork.drawLineOfRoads(this.lastDragCoord, coord, (x, y) =>
-          this.level.isOccupied(x, y)
-        );
-        if (e.pointerType === 'touch') {
-          this.snapTouchToNearbyDrivewayOrEntrance(coord);
+        // Backtrack-to-Erase: if dragging back onto the previous tile in this stroke, undo the last mistaken tile!
+        const prevInStroke =
+          this.dragPath.length >= 2 ? this.dragPath[this.dragPath.length - 2] : null;
+        if (prevInStroke && prevInStroke.x === coord.x && prevInStroke.y === coord.y) {
+          const popped = this.dragPath.pop();
+          if (popped) {
+            const idx = this.currentStrokeTiles.findIndex(
+              (t) => t.x === popped.x && t.y === popped.y
+            );
+            if (idx !== -1) {
+              this.currentStrokeTiles.splice(idx, 1);
+              this.roadNetwork.removeRoad(
+                popped.x,
+                popped.y,
+                (x, y) => this.traffic.isCarOnTile(x, y),
+                true
+              );
+              sound.triggerHaptic('light');
+            }
+          }
+          this.lastDragCoord = coord;
+          this.updateHUD();
+          return;
         }
+
+        const dx = Math.abs(coord.x - this.lastDragCoord.x);
+        const dy = Math.abs(coord.y - this.lastDragCoord.y);
+        const sx = this.lastDragCoord.x < coord.x ? 1 : -1;
+        const sy = this.lastDragCoord.y < coord.y ? 1 : -1;
+        let err = dx - dy;
+        let cx = this.lastDragCoord.x;
+        let cy = this.lastDragCoord.y;
+        while (true) {
+          const hadRoad = this.roadNetwork.hasRoad(cx, cy);
+          if (this.roadNetwork.placeRoad(cx, cy, (x, y) => this.level.isOccupied(x, y))) {
+            if (!hadRoad) this.currentStrokeTiles.push({ x: cx, y: cy });
+          }
+          if (cx === coord.x && cy === coord.y) break;
+          const e2 = 2 * err;
+          if (e2 > -dy) {
+            err -= dy;
+            cx += sx;
+          }
+          if (e2 < dx) {
+            err += dx;
+            cy += sy;
+          }
+        }
+        this.lastDragCoord = coord;
+        this.dragPath.push(coord);
       }
-      this.lastDragCoord = coord;
-      this.dragPath.push(coord);
       this.updateHUD();
     }
   }
@@ -1499,6 +1553,15 @@ class MiniMotorwaysGame {
 
     this.lastDragCoord = null;
     this.dragPath = [];
+    if (this.currentStrokeTiles.length > 0) {
+      const strokeCopy = [...this.currentStrokeTiles];
+      this.currentStrokeTiles = [];
+      this.pushUndo(() => {
+        for (const t of strokeCopy) {
+          this.roadNetwork.removeRoad(t.x, t.y, (x, y) => this.traffic.isCarOnTile(x, y), true);
+        }
+      });
+    }
     sound.resetDrawStep();
     this.updateHUD();
   }
