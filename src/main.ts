@@ -1481,21 +1481,22 @@ class MiniMotorwaysGame {
       }
     }
 
+    const endCoord = this.hoverCoord || this.renderer.screenToGrid(e.clientX, e.clientY);
     this.isPointerDown = false;
     if (e.pointerType === 'touch') {
       this.hoverCoord = null;
     }
 
-    if (this.currentTool === 'motorway' && this.motorwayStartCoord && this.hoverCoord) {
+    if (this.currentTool === 'motorway' && this.motorwayStartCoord && endCoord) {
       const dist = Math.hypot(
-        this.hoverCoord.x - this.motorwayStartCoord.x,
-        this.hoverCoord.y - this.motorwayStartCoord.y
+        endCoord.x - this.motorwayStartCoord.x,
+        endCoord.y - this.motorwayStartCoord.y
       );
 
       if (dist >= 3) {
         const created = this.roadNetwork.placeMotorway(
           this.motorwayStartCoord,
-          this.hoverCoord
+          endCoord
         );
         if (created) {
           this.roadNetwork.placeRoad(
@@ -1505,8 +1506,8 @@ class MiniMotorwaysGame {
             true
           );
           this.roadNetwork.placeRoad(
-            this.hoverCoord.x,
-            this.hoverCoord.y,
+            endCoord.x,
+            endCoord.y,
             (x, y) => this.level.isOccupied(x, y),
             true
           );
@@ -1517,17 +1518,17 @@ class MiniMotorwaysGame {
         this.showToast('Drag a longer distance to place a Motorway.');
       }
       this.motorwayStartCoord = null;
-    } else if (this.currentTool === 'subway' && this.motorwayStartCoord && this.hoverCoord) {
+    } else if (this.currentTool === 'subway' && this.motorwayStartCoord && endCoord) {
       const dist = Math.hypot(
-        this.hoverCoord.x - this.motorwayStartCoord.x,
-        this.hoverCoord.y - this.motorwayStartCoord.y
+        endCoord.x - this.motorwayStartCoord.x,
+        endCoord.y - this.motorwayStartCoord.y
       );
 
       if (dist >= 3) {
         const startTile = this.roadNetwork.getTileType(this.motorwayStartCoord.x, this.motorwayStartCoord.y);
-        const endTile = this.roadNetwork.getTileType(this.hoverCoord.x, this.hoverCoord.y);
+        const endTile = this.roadNetwork.getTileType(endCoord.x, endCoord.y);
         const startOccupied = this.level.isOccupied(this.motorwayStartCoord.x, this.motorwayStartCoord.y);
-        const endOccupied = this.level.isOccupied(this.hoverCoord.x, this.hoverCoord.y);
+        const endOccupied = this.level.isOccupied(endCoord.x, endCoord.y);
 
         if (startTile === 'water' || endTile === 'water') {
           this.showToast('⚠️ Subway station entrance cannot be placed in water!');
@@ -1538,7 +1539,7 @@ class MiniMotorwaysGame {
         } else {
           const created = this.roadNetwork.placeSubway(
             this.motorwayStartCoord,
-            this.hoverCoord
+            endCoord
           );
           if (created) {
             this.showToast(`Subway Line S${created.number} opened! Automated metro shuttle active.`);
